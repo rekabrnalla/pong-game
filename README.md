@@ -193,6 +193,7 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `SPIN_CURVE_FORCE` to make spin curve the ball more or less.
 - Change `PADDLE_BRUSH_TO_SPIN` to make paddle movement affect spin more or less.
 - Change `WALL_SURFACE_FRICTION` to make wall bounces grip or slide more.
+- Change `WALL_FRICTION_TO_SPIN` to make wall friction create more or less visible rotation.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
 - Change `CONTROLLED_BOUNCE_WOBBLE` to make bounces more or less surprising.
 - Change `WINNING_SCORE` to decide how many points wins the game.
