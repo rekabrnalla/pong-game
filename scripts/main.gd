@@ -26,8 +26,10 @@ const DOUBLE_TAP_WINDOW := 0.30
 const SPRINT_MULTIPLIER := 1.65
 const SPRINT_SECONDS := 2.0
 const SPRINT_COOLDOWN_SECONDS := 5.0
-const MOTION_BLUR_POINTS := 9
+const MOTION_BLUR_POINTS := 12
 const MOTION_BLUR_ALPHA := 0.22
+const PADDLE_MOTION_BLUR_POINTS := 8
+const PADDLE_MOTION_BLUR_ALPHA := 0.22
 const WINNING_SCORE := 7
 
 var left_score := 0
@@ -55,6 +57,8 @@ var left_touch_index := -1
 var right_touch_index := -1
 var left_touch_target_y := 0.0
 var right_touch_target_y := 0.0
+var left_paddle_trail: Array[Vector2] = []
+var right_paddle_trail: Array[Vector2] = []
 var touch_controls_seen := false
 var game_over := false
 
@@ -100,6 +104,8 @@ func _input(event: InputEvent) -> void:
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN_SIZE), Color(0.05, 0.06, 0.08), true)
 	draw_touch_guides()
+	draw_paddle_motion_blur(left_paddle_trail, Color(0.2, 0.8, 1.0), left_paddle_velocity)
+	draw_paddle_motion_blur(right_paddle_trail, Color(1.0, 0.35, 0.35), right_paddle_velocity)
 	draw_ball_motion_blur()
 
 	var dash_height := 24.0
@@ -127,6 +133,14 @@ func draw_ball_motion_blur() -> void:
 		var radius := BALL_SIZE.x / 2.0 * (1.0 - age * 0.35)
 		var alpha := MOTION_BLUR_ALPHA * (1.0 - age)
 		draw_circle(ball_trail[i], radius, Color(1.0, 0.94, 0.16, alpha))
+
+
+func draw_paddle_motion_blur(paddle_trail: Array[Vector2], color: Color, paddle_velocity: float) -> void:
+	var speed_alpha: float = clamp(abs(paddle_velocity) / (PADDLE_SPEED * SPRINT_MULTIPLIER), 0.0, 1.0)
+	for i in range(paddle_trail.size()):
+		var age := float(i + 1) / float(PADDLE_MOTION_BLUR_POINTS + 1)
+		var alpha: float = PADDLE_MOTION_BLUR_ALPHA * speed_alpha * pow(1.0 - age, 1.35)
+		draw_rect(Rect2(paddle_trail[i], PADDLE_SIZE), Color(color.r, color.g, color.b, alpha), true)
 
 
 func create_game_objects() -> void:
@@ -242,6 +256,8 @@ func move_paddles(delta: float) -> void:
 	update_sprint_timers(delta)
 	check_sprint_taps()
 
+	var left_old_position := left_paddle.position
+	var right_old_position := right_paddle.position
 	var left_direction := 0.0
 	var right_direction := 0.0
 
@@ -276,6 +292,8 @@ func move_paddles(delta: float) -> void:
 
 	left_paddle.position.y = clamp(left_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
 	right_paddle.position.y = clamp(right_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
+	save_paddle_trail_point(left_paddle_trail, left_old_position, left_paddle.position)
+	save_paddle_trail_point(right_paddle_trail, right_old_position, right_paddle.position)
 
 
 func move_paddle_to_touch(paddle: ColorRect, target_y: float, delta: float, is_left_paddle: bool) -> void:
@@ -392,6 +410,16 @@ func save_ball_trail_point() -> void:
 		ball_trail.pop_back()
 
 
+func save_paddle_trail_point(paddle_trail: Array[Vector2], old_position: Vector2, new_position: Vector2) -> void:
+	if old_position.distance_squared_to(new_position) <= 0.25:
+		paddle_trail.clear()
+		return
+
+	paddle_trail.push_front(old_position)
+	if paddle_trail.size() > PADDLE_MOTION_BLUR_POINTS:
+		paddle_trail.pop_back()
+
+
 func spin_ball(delta: float) -> void:
 	ball_spin *= pow(SPIN_DECAY, delta * 60.0)
 	ball_rotation += ball_spin * delta
@@ -481,6 +509,8 @@ func reset_round() -> void:
 	ball_rotation = 0.0
 	ball.rotation = 0.0
 	ball_trail.clear()
+	left_paddle_trail.clear()
+	right_paddle_trail.clear()
 	left_paddle_velocity = 0.0
 	right_paddle_velocity = 0.0
 
@@ -548,6 +578,6 @@ class SpinningBall:
 		draw_circle(Vector2.ZERO, radius, Color(0.08, 0.08, 0.08))
 		draw_circle(Vector2.ZERO, radius - 2.0, Color(1.0, 0.94, 0.16))
 		draw_circle(Vector2(-radius * 0.32, -radius * 0.35), radius * 0.28, Color(1.0, 1.0, 0.55, 0.55))
-		draw_arc(Vector2.ZERO, radius * 0.58, -1.35, 1.35, 32, Color(0.1, 0.13, 0.07), 3.0)
-		draw_arc(Vector2.ZERO, radius * 0.58, PI - 1.35, PI + 1.35, 32, Color(0.1, 0.13, 0.07), 3.0)
+		draw_arc(Vector2.ZERO, radius * 0.62, -1.45, 1.45, 32, Color(0.07, 0.1, 0.04), 4.0)
+		draw_arc(Vector2.ZERO, radius * 0.62, PI - 1.45, PI + 1.45, 32, Color(0.07, 0.1, 0.04), 4.0)
 		draw_arc(Vector2.ZERO, radius - 1.5, 0.0, TAU, 64, Color(1.0, 1.0, 0.72, 0.35), 1.5)
