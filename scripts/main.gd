@@ -23,6 +23,8 @@ const SPRINT_SECONDS := 2.0
 const SPRINT_COOLDOWN_SECONDS := 5.0
 const MOTION_BLUR_POINTS := 9
 const MOTION_BLUR_ALPHA := 0.22
+const TOUCH_DEAD_ZONE := 10.0
+const TOUCH_PADDLE_CATCHUP := 1.15
 const WINNING_SCORE := 7
 
 var left_score := 0
@@ -44,6 +46,12 @@ var left_down_was_down := false
 var right_up_was_down := false
 var right_down_was_down := false
 var ball_trail: Array[Vector2] = []
+var left_touch_active := false
+var right_touch_active := false
+var left_touch_index := -1
+var right_touch_index := -1
+var left_touch_target_y := 0.0
+var right_touch_target_y := 0.0
 var game_over := false
 
 var left_paddle: ColorRect
@@ -77,8 +85,17 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		handle_touch_press(event)
+
+	if event is InputEventScreenDrag:
+		handle_touch_drag(event)
+
+
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, SCREEN_SIZE), Color(0.05, 0.06, 0.08), true)
+	draw_touch_guides()
 	draw_ball_motion_blur()
 
 	var dash_height := 24.0
@@ -88,6 +105,16 @@ func _draw() -> void:
 	while y < SCREEN_SIZE.y:
 		draw_rect(Rect2(Vector2(x, y), Vector2(4, dash_height)), Color(0.7, 0.75, 0.8, 0.5), true)
 		y += dash_height + gap
+
+
+func draw_touch_guides() -> void:
+	if left_touch_active:
+		draw_rect(Rect2(Vector2.ZERO, Vector2(SCREEN_SIZE.x / 2.0, SCREEN_SIZE.y)), Color(0.2, 0.8, 1.0, 0.08), true)
+		draw_line(Vector2(0.0, left_touch_target_y), Vector2(SCREEN_SIZE.x / 2.0, left_touch_target_y), Color(0.2, 0.8, 1.0, 0.35), 2.0)
+
+	if right_touch_active:
+		draw_rect(Rect2(Vector2(SCREEN_SIZE.x / 2.0, 0.0), Vector2(SCREEN_SIZE.x / 2.0, SCREEN_SIZE.y)), Color(1.0, 0.35, 0.35, 0.08), true)
+		draw_line(Vector2(SCREEN_SIZE.x / 2.0, right_touch_target_y), Vector2(SCREEN_SIZE.x, right_touch_target_y), Color(1.0, 0.35, 0.35, 0.35), 2.0)
 
 
 func draw_ball_motion_blur() -> void:
@@ -174,6 +201,39 @@ func play_sound(player: AudioStreamPlayer) -> void:
 	player.play()
 
 
+func handle_touch_press(event: InputEventScreenTouch) -> void:
+	var touch_position := event.position
+	var is_left_side := touch_position.x < SCREEN_SIZE.x / 2.0
+
+	if event.pressed:
+		if is_left_side:
+			left_touch_active = true
+			left_touch_index = event.index
+			left_touch_target_y = touch_position.y
+			check_left_sprint_tap(Time.get_ticks_msec() / 1000.0)
+		else:
+			right_touch_active = true
+			right_touch_index = event.index
+			right_touch_target_y = touch_position.y
+			check_right_sprint_tap(Time.get_ticks_msec() / 1000.0)
+	else:
+		if event.index == left_touch_index:
+			left_touch_active = false
+			left_touch_index = -1
+
+		if event.index == right_touch_index:
+			right_touch_active = false
+			right_touch_index = -1
+
+
+func handle_touch_drag(event: InputEventScreenDrag) -> void:
+	if event.index == left_touch_index:
+		left_touch_target_y = event.position.y
+
+	if event.index == right_touch_index:
+		right_touch_target_y = event.position.y
+
+
 func move_paddles(delta: float) -> void:
 	update_sprint_timers(delta)
 	check_sprint_taps()
@@ -183,12 +243,16 @@ func move_paddles(delta: float) -> void:
 		left_direction -= 1.0
 	if Input.is_key_pressed(KEY_S):
 		left_direction += 1.0
+	if left_touch_active:
+		left_direction = direction_toward_touch(left_paddle, left_touch_target_y)
 
 	var right_direction := 0.0
 	if Input.is_key_pressed(KEY_UP):
 		right_direction -= 1.0
 	if Input.is_key_pressed(KEY_DOWN):
 		right_direction += 1.0
+	if right_touch_active:
+		right_direction = direction_toward_touch(right_paddle, right_touch_target_y)
 
 	var left_speed := PADDLE_SPEED
 	if left_sprint_time_left > 0.0:
@@ -206,6 +270,15 @@ func move_paddles(delta: float) -> void:
 
 	left_paddle.position.y = clamp(left_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
 	right_paddle.position.y = clamp(right_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
+
+
+func direction_toward_touch(paddle: ColorRect, target_y: float) -> float:
+	var paddle_center_y := paddle.position.y + PADDLE_SIZE.y / 2.0
+	var distance := target_y - paddle_center_y
+	if abs(distance) <= TOUCH_DEAD_ZONE:
+		return 0.0
+
+	return clamp(distance / (PADDLE_SPEED * TOUCH_PADDLE_CATCHUP), -1.0, 1.0)
 
 
 func update_sprint_timers(delta: float) -> void:
@@ -402,7 +475,7 @@ func update_score_text() -> void:
 
 
 func update_help_text() -> void:
-	help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
+	help_label.text = "W/S or left drag  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down or right drag  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
 
 
 func sprint_status(sprint_time_left: float, cooldown_left: float) -> String:
@@ -426,6 +499,10 @@ func reset_sprints() -> void:
 	left_down_was_down = false
 	right_up_was_down = false
 	right_down_was_down = false
+	left_touch_active = false
+	right_touch_active = false
+	left_touch_index = -1
+	right_touch_index = -1
 
 
 func new_game() -> void:
