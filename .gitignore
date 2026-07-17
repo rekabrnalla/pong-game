@@ -1,0 +1,14 @@
+# Godot local editor/cache files
+.godot/
+
+# Imported/exported build artifacts
+.import/
+export/
+build/
+*.exe
+*.pck
+*.zip
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
