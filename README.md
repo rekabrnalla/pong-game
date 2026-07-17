@@ -135,7 +135,7 @@ Paddle hits use a "brush" idea:
 - The left and right sides of a spinning ball move opposite ways, so the code checks which paddle side was hit.
 - That brushing also changes the bounce angle a little.
 
-Wall hits use spin too. A spinning ball can skip slightly sideways when it hits the top or bottom wall, like a tennis ball with topspin or backspin. The top and bottom of the ball also move opposite ways, so those wall skips use opposite directions.
+Wall hits use spin too. The code checks how fast the part of the ball touching the wall is sliding. Friction pushes against that sliding, which can slow the ball sideways and add clockwise or counter-clockwise spin. The top and bottom of the ball move opposite ways, so they create opposite spin.
 
 The important spin variables are:
 
@@ -144,7 +144,8 @@ The important spin variables are:
 - `SPIN_CURVE_FORCE`: how much spin bends the flight path.
 - `PADDLE_BRUSH_TO_SPIN`: how much paddle brushing changes spin.
 - `PADDLE_BRUSH_TO_ANGLE`: how much paddle brushing changes the bounce angle.
-- `SPIN_WALL_SKIP`: how much wall bounces are affected by spin.
+- `WALL_SURFACE_FRICTION`: how much wall friction changes the ball's sideways speed.
+- `WALL_FRICTION_TO_SPIN`: how much wall friction changes spin.
 - `MAX_SPIN`: how much spin is allowed.
 
 ## Round Ball Bounces
@@ -191,7 +192,7 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `MOTION_BLUR_ALPHA` to make the trail stronger or lighter.
 - Change `SPIN_CURVE_FORCE` to make spin curve the ball more or less.
 - Change `PADDLE_BRUSH_TO_SPIN` to make paddle movement affect spin more or less.
-- Change `SPIN_WALL_SKIP` to make wall bounces skip more or less.
+- Change `WALL_SURFACE_FRICTION` to make wall bounces grip or slide more.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
 - Change `CONTROLLED_BOUNCE_WOBBLE` to make bounces more or less surprising.
 - Change `WINNING_SCORE` to decide how many points wins the game.

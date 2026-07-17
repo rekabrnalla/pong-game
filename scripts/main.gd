@@ -14,8 +14,8 @@ const PADDLE_BRUSH_TO_SPIN := 0.018
 const PADDLE_BRUSH_TO_ANGLE := 0.00055
 const HIT_SPOT_TO_SPIN := 2.0
 const SPIN_CURVE_FORCE := 20.0
-const SPIN_WALL_SKIP := 0.95
-const WALL_SPEED_TO_SPIN := 0.004
+const WALL_SURFACE_FRICTION := 0.08
+const WALL_FRICTION_TO_SPIN := 0.004
 const WALL_SPIN_LOSS := 0.88
 const SPIN_PADDLE_GRIP := 0.10
 const SPIN_DECAY := 0.995
@@ -399,10 +399,14 @@ func spin_ball(delta: float) -> void:
 
 func bounce_from_wall(wall_side: float) -> void:
 	var old_x_speed := ball_velocity.x
+	var surface_spin_speed := -wall_side * ball_spin * SPIN_SURFACE_SPEED
+	var relative_surface_speed := old_x_speed + surface_spin_speed
+	var friction_impulse := -relative_surface_speed * WALL_SURFACE_FRICTION
+
 	ball_velocity.y *= -1.0
-	ball_velocity.x += wall_side * ball_spin * SPIN_WALL_SKIP
+	ball_velocity.x += friction_impulse
 	ball_velocity = ball_velocity.normalized() * ball_speed
-	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + wall_side * old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
+	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + -wall_side * friction_impulse * WALL_FRICTION_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
 func check_ball_collisions() -> void:
