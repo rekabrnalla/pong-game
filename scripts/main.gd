@@ -400,9 +400,9 @@ func spin_ball(delta: float) -> void:
 func bounce_from_wall(wall_side: float) -> void:
 	var old_x_speed := ball_velocity.x
 	ball_velocity.y *= -1.0
-	ball_velocity.x += -wall_side * ball_spin * SPIN_WALL_SKIP
+	ball_velocity.x += wall_side * ball_spin * SPIN_WALL_SKIP
 	ball_velocity = ball_velocity.normalized() * ball_speed
-	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + -wall_side * old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
+	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + wall_side * old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
 func check_ball_collisions() -> void:
