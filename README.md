@@ -19,7 +19,6 @@ This is a tiny Godot 4 project for learning how Pong works.
 - Mobile right paddle: drag on the right half of the screen
 - Left sprint: double-tap **W** or **S**
 - Right sprint: double-tap **Up Arrow** or **Down Arrow**
-- Mobile sprint: double-tap your side of the screen
 - Restart: **R**
 
 ## What The Code Is Doing
@@ -86,7 +85,6 @@ Each player can sprint for 2 seconds.
 
 - Left player: double-tap **W** or **S**
 - Right player: double-tap **Up Arrow** or **Down Arrow**
-- Mobile: double-tap your half of the screen
 
 After sprinting, that player has to wait 5 seconds before sprinting again.
 
@@ -114,7 +112,7 @@ The same web game can work on a phone or tablet.
 
 - Drag on the left half of the screen to move the left paddle.
 - Drag on the right half of the screen to move the right paddle.
-- Double-tap your half of the screen to sprint.
+- On mobile, the paddle follows your finger directly, so sprint is not needed.
 
 The keyboard controls still work on computer.
 

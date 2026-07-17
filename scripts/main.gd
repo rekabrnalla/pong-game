@@ -23,8 +23,6 @@ const SPRINT_SECONDS := 2.0
 const SPRINT_COOLDOWN_SECONDS := 5.0
 const MOTION_BLUR_POINTS := 9
 const MOTION_BLUR_ALPHA := 0.22
-const TOUCH_DEAD_ZONE := 10.0
-const TOUCH_PADDLE_CATCHUP := 1.15
 const WINNING_SCORE := 7
 
 var left_score := 0
@@ -52,6 +50,7 @@ var left_touch_index := -1
 var right_touch_index := -1
 var left_touch_target_y := 0.0
 var right_touch_target_y := 0.0
+var touch_controls_seen := false
 var game_over := false
 
 var left_paddle: ColorRect
@@ -202,6 +201,7 @@ func play_sound(player: AudioStreamPlayer) -> void:
 
 
 func handle_touch_press(event: InputEventScreenTouch) -> void:
+	touch_controls_seen = true
 	var touch_position := event.position
 	var is_left_side := touch_position.x < SCREEN_SIZE.x / 2.0
 
@@ -210,12 +210,10 @@ func handle_touch_press(event: InputEventScreenTouch) -> void:
 			left_touch_active = true
 			left_touch_index = event.index
 			left_touch_target_y = touch_position.y
-			check_left_sprint_tap(Time.get_ticks_msec() / 1000.0)
 		else:
 			right_touch_active = true
 			right_touch_index = event.index
 			right_touch_target_y = touch_position.y
-			check_right_sprint_tap(Time.get_ticks_msec() / 1000.0)
 	else:
 		if event.index == left_touch_index:
 			left_touch_active = false
@@ -227,6 +225,7 @@ func handle_touch_press(event: InputEventScreenTouch) -> void:
 
 
 func handle_touch_drag(event: InputEventScreenDrag) -> void:
+	touch_controls_seen = true
 	if event.index == left_touch_index:
 		left_touch_target_y = event.position.y
 
@@ -239,20 +238,7 @@ func move_paddles(delta: float) -> void:
 	check_sprint_taps()
 
 	var left_direction := 0.0
-	if Input.is_key_pressed(KEY_W):
-		left_direction -= 1.0
-	if Input.is_key_pressed(KEY_S):
-		left_direction += 1.0
-	if left_touch_active:
-		left_direction = direction_toward_touch(left_paddle, left_touch_target_y)
-
 	var right_direction := 0.0
-	if Input.is_key_pressed(KEY_UP):
-		right_direction -= 1.0
-	if Input.is_key_pressed(KEY_DOWN):
-		right_direction += 1.0
-	if right_touch_active:
-		right_direction = direction_toward_touch(right_paddle, right_touch_target_y)
 
 	var left_speed := PADDLE_SPEED
 	if left_sprint_time_left > 0.0:
@@ -262,23 +248,42 @@ func move_paddles(delta: float) -> void:
 	if right_sprint_time_left > 0.0:
 		right_speed *= SPRINT_MULTIPLIER
 
-	left_paddle_velocity = left_direction * left_speed
-	right_paddle_velocity = right_direction * right_speed
+	if left_touch_active:
+		move_paddle_to_touch(left_paddle, left_touch_target_y, delta, true)
+	else:
+		if Input.is_key_pressed(KEY_W):
+			left_direction -= 1.0
+		if Input.is_key_pressed(KEY_S):
+			left_direction += 1.0
+		left_paddle_velocity = left_direction * left_speed
+		left_paddle.position.y += left_paddle_velocity * delta
 
-	left_paddle.position.y += left_paddle_velocity * delta
-	right_paddle.position.y += right_paddle_velocity * delta
+	if right_touch_active:
+		move_paddle_to_touch(right_paddle, right_touch_target_y, delta, false)
+	else:
+		if Input.is_key_pressed(KEY_UP):
+			right_direction -= 1.0
+		if Input.is_key_pressed(KEY_DOWN):
+			right_direction += 1.0
+		right_paddle_velocity = right_direction * right_speed
+		right_paddle.position.y += right_paddle_velocity * delta
+
 
 	left_paddle.position.y = clamp(left_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
 	right_paddle.position.y = clamp(right_paddle.position.y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
 
 
-func direction_toward_touch(paddle: ColorRect, target_y: float) -> float:
-	var paddle_center_y := paddle.position.y + PADDLE_SIZE.y / 2.0
-	var distance := target_y - paddle_center_y
-	if abs(distance) <= TOUCH_DEAD_ZONE:
-		return 0.0
+func move_paddle_to_touch(paddle: ColorRect, target_y: float, delta: float, is_left_paddle: bool) -> void:
+	var old_y := paddle.position.y
+	var new_y: float = clamp(target_y - PADDLE_SIZE.y / 2.0, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
+	paddle.position.y = new_y
 
-	return clamp(distance / (PADDLE_SPEED * TOUCH_PADDLE_CATCHUP), -1.0, 1.0)
+	if delta > 0.0:
+		var touch_velocity := (new_y - old_y) / delta
+		if is_left_paddle:
+			left_paddle_velocity = touch_velocity
+		else:
+			right_paddle_velocity = touch_velocity
 
 
 func update_sprint_timers(delta: float) -> void:
@@ -475,7 +480,10 @@ func update_score_text() -> void:
 
 
 func update_help_text() -> void:
-	help_label.text = "W/S or left drag  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down or right drag  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
+	if touch_controls_seen:
+		help_label.text = "Touch: drag your side to move the paddle    Computer: W/S and Up/Down"
+	else:
+		help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
 
 
 func sprint_status(sprint_time_left: float, cooldown_left: float) -> String:
