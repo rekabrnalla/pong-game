@@ -2,6 +2,20 @@
 
 This is a tiny Godot 4 project for learning how Pong works.
 
+## Play Online
+
+Play Spin Pong on itch.io:
+
+[https://rekabrnalla.itch.io/spin-pong](https://rekabrnalla.itch.io/spin-pong)
+
+Itch.io embed code for pages that support iframes:
+
+```html
+<iframe frameborder="0" src="https://itch.io/embed/4786597?linkback=true" width="552" height="167"><a href="https://rekabrnalla.itch.io/spin-pong">Spin Pong by rekabrnalla</a></iframe>
+```
+
+Note: GitHub README files do not render iframe embeds, so the playable link above is the GitHub-friendly version.
+
 ## How To Open It
 
 1. Open Godot.
@@ -15,6 +29,8 @@ This is a tiny Godot 4 project for learning how Pong works.
 
 - Left paddle: **W** and **S**
 - Right paddle: **Up Arrow** and **Down Arrow**
+- Mobile left paddle: drag on the left half of the screen
+- Mobile right paddle: drag on the right half of the screen
 - Left sprint: double-tap **W** or **S**
 - Right sprint: double-tap **Up Arrow** or **Down Arrow**
 - Restart: **R**
@@ -104,6 +120,16 @@ The code uses:
 - `MOTION_BLUR_POINTS`
 - `MOTION_BLUR_ALPHA`
 
+## Mobile Touch Controls
+
+The same web game can work on a phone or tablet.
+
+- Drag on the left half of the screen to move the left paddle.
+- Drag on the right half of the screen to move the right paddle.
+- On mobile, the paddle follows your finger directly, so sprint is not needed.
+
+The keyboard controls still work on computer.
+
 ## Spin
 
 The ball now has spin, kind of like a tennis ball.
@@ -116,11 +142,25 @@ Spin does three things:
 - The ball curves a little while flying.
 - Wall and paddle bounces are changed a little by the spin.
 
+Paddle hits use a "brush" idea:
+
+- If the paddle moves with the ball's spin, it can add spin.
+- If the paddle moves against the ball's spin, it can reduce or reverse spin.
+- The left and right sides of a spinning ball move opposite ways, so the code checks which paddle side was hit.
+- That brushing also changes the bounce angle a little.
+
+Wall hits use spin too. The code checks how fast the part of the ball touching the wall is sliding. During impact, the wall tries to make that contact patch stick for a moment. Squishiness controls how hard it tries to stick, and friction caps how much sideways impulse the wall can actually apply. That sideways friction creates torque, which adds clockwise or counter-clockwise spin. The top and bottom of the ball move opposite ways, so they create opposite spin.
+
 The important spin variables are:
 
 - `ball_spin`: how fast the ball is spinning.
 - `ball_rotation`: how the ball looks on screen.
 - `SPIN_CURVE_FORCE`: how much spin bends the flight path.
+- `PADDLE_BRUSH_TO_SPIN`: how much paddle brushing changes spin.
+- `PADDLE_BRUSH_TO_ANGLE`: how much paddle brushing changes the bounce angle.
+- `WALL_SQUISHINESS`: how much wall impact tries to make the contact patch stick.
+- `WALL_SURFACE_FRICTION`: how much wall friction changes the ball's sideways speed.
+- `WALL_FRICTION_TO_SPIN`: how much wall friction changes spin.
 - `MAX_SPIN`: how much spin is allowed.
 
 ## Round Ball Bounces
@@ -166,6 +206,10 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `MOTION_BLUR_POINTS` to make the ball trail longer or shorter.
 - Change `MOTION_BLUR_ALPHA` to make the trail stronger or lighter.
 - Change `SPIN_CURVE_FORCE` to make spin curve the ball more or less.
+- Change `PADDLE_BRUSH_TO_SPIN` to make paddle movement affect spin more or less.
+- Change `WALL_SQUISHINESS` to make wall impacts trade more or less sliding for spin.
+- Change `WALL_SURFACE_FRICTION` to make wall bounces grip or slide more.
+- Change `WALL_FRICTION_TO_SPIN` to make wall friction create more or less visible rotation.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
 - Change `CONTROLLED_BOUNCE_WOBBLE` to make bounces more or less surprising.
 - Change `WINNING_SCORE` to decide how many points wins the game.
