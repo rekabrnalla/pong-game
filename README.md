@@ -2,6 +2,20 @@
 
 This is a tiny Godot 4 project for learning how Pong works.
 
+## Play Online
+
+Play Spin Pong on itch.io:
+
+[https://rekabrnalla.itch.io/spin-pong](https://rekabrnalla.itch.io/spin-pong)
+
+Itch.io embed code for pages that support iframes:
+
+```html
+<iframe frameborder="0" src="https://itch.io/embed/4786597?linkback=true" width="552" height="167"><a href="https://rekabrnalla.itch.io/spin-pong">Spin Pong by rekabrnalla</a></iframe>
+```
+
+Note: GitHub README files do not render iframe embeds, so the playable link above is the GitHub-friendly version.
+
 ## How To Open It
 
 1. Open Godot.
