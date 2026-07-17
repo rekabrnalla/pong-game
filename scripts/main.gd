@@ -14,7 +14,8 @@ const PADDLE_BRUSH_TO_SPIN := 0.018
 const PADDLE_BRUSH_TO_ANGLE := 0.00055
 const HIT_SPOT_TO_SPIN := 2.0
 const SPIN_CURVE_FORCE := 20.0
-const WALL_SURFACE_FRICTION := 0.08
+const WALL_SQUISHINESS := 0.55
+const WALL_SURFACE_FRICTION := 0.16
 const WALL_FRICTION_TO_SPIN := 0.045
 const WALL_SPIN_LOSS := 0.88
 const SPIN_PADDLE_GRIP := 0.10
@@ -399,9 +400,12 @@ func spin_ball(delta: float) -> void:
 
 func bounce_from_wall(wall_side: float) -> void:
 	var old_x_speed := ball_velocity.x
+	var old_y_speed := ball_velocity.y
 	var surface_spin_speed := -wall_side * ball_spin * SPIN_SURFACE_SPEED
 	var relative_surface_speed := old_x_speed + surface_spin_speed
-	var friction_impulse := -relative_surface_speed * WALL_SURFACE_FRICTION
+	var desired_stick_impulse: float = -relative_surface_speed * WALL_SQUISHINESS
+	var max_friction_impulse: float = abs(old_y_speed) * WALL_SURFACE_FRICTION
+	var friction_impulse: float = clamp(desired_stick_impulse, -max_friction_impulse, max_friction_impulse)
 
 	ball_velocity.y *= -1.0
 	ball_velocity.x += friction_impulse

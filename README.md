@@ -135,7 +135,7 @@ Paddle hits use a "brush" idea:
 - The left and right sides of a spinning ball move opposite ways, so the code checks which paddle side was hit.
 - That brushing also changes the bounce angle a little.
 
-Wall hits use spin too. The code checks how fast the part of the ball touching the wall is sliding. Friction pushes against that sliding, which can slow the ball sideways and add clockwise or counter-clockwise spin. The top and bottom of the ball move opposite ways, so they create opposite spin.
+Wall hits use spin too. The code checks how fast the part of the ball touching the wall is sliding. During impact, the wall tries to make that contact patch stick for a moment. Squishiness controls how hard it tries to stick, and friction caps how much sideways impulse the wall can actually apply. That sideways friction creates torque, which adds clockwise or counter-clockwise spin. The top and bottom of the ball move opposite ways, so they create opposite spin.
 
 The important spin variables are:
 
@@ -144,6 +144,7 @@ The important spin variables are:
 - `SPIN_CURVE_FORCE`: how much spin bends the flight path.
 - `PADDLE_BRUSH_TO_SPIN`: how much paddle brushing changes spin.
 - `PADDLE_BRUSH_TO_ANGLE`: how much paddle brushing changes the bounce angle.
+- `WALL_SQUISHINESS`: how much wall impact tries to make the contact patch stick.
 - `WALL_SURFACE_FRICTION`: how much wall friction changes the ball's sideways speed.
 - `WALL_FRICTION_TO_SPIN`: how much wall friction changes spin.
 - `MAX_SPIN`: how much spin is allowed.
@@ -192,6 +193,7 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `MOTION_BLUR_ALPHA` to make the trail stronger or lighter.
 - Change `SPIN_CURVE_FORCE` to make spin curve the ball more or less.
 - Change `PADDLE_BRUSH_TO_SPIN` to make paddle movement affect spin more or less.
+- Change `WALL_SQUISHINESS` to make wall impacts trade more or less sliding for spin.
 - Change `WALL_SURFACE_FRICTION` to make wall bounces grip or slide more.
 - Change `WALL_FRICTION_TO_SPIN` to make wall friction create more or less visible rotation.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
