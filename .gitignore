@@ -5,6 +5,9 @@
 .import/
 export/
 build/
+web-export/
+pong-game-screenshot.png
+*.import
 *.exe
 *.pck
 *.zip

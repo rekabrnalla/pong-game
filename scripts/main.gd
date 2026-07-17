@@ -58,7 +58,6 @@ var win_sound: AudioStreamPlayer
 
 
 func _ready() -> void:
-	get_window().size = Vector2i(SCREEN_SIZE)
 	create_game_objects()
 	reset_round()
 
