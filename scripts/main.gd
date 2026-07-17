@@ -481,7 +481,7 @@ func update_score_text() -> void:
 
 func update_help_text() -> void:
 	if touch_controls_seen:
-		help_label.text = "Touch: drag your side to move the paddle    Computer: W/S and Up/Down"
+		help_label.text = "Touch: drag your side to move your paddle"
 	else:
 		help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
 
