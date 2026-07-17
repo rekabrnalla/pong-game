@@ -9,10 +9,14 @@ const MAX_BALL_SPEED := 980.0
 const PADDLE_HIT_SPEED_BOOST := 24.0
 const RACKET_POWER := 0.12
 const MAX_SPIN := 18.0
-const SPIN_FROM_SWING := 0.028
-const SPIN_FROM_HIT_SPOT := 3.0
+const SPIN_SURFACE_SPEED := 28.0
+const PADDLE_BRUSH_TO_SPIN := 0.018
+const PADDLE_BRUSH_TO_ANGLE := 0.00055
+const HIT_SPOT_TO_SPIN := 2.0
 const SPIN_CURVE_FORCE := 20.0
-const SPIN_WALL_GRIP := 0.75
+const SPIN_WALL_SKIP := 0.95
+const WALL_SPEED_TO_SPIN := 0.004
+const WALL_SPIN_LOSS := 0.88
 const SPIN_PADDLE_GRIP := 0.10
 const SPIN_DECAY := 0.995
 const ROUND_BALL_EDGE_LIFT := 0.35
@@ -394,10 +398,11 @@ func spin_ball(delta: float) -> void:
 
 
 func bounce_from_wall() -> void:
+	var old_x_speed := ball_velocity.x
 	ball_velocity.y *= -1.0
-	ball_velocity.x += ball_spin * SPIN_WALL_GRIP
+	ball_velocity.x += ball_spin * SPIN_WALL_SKIP
 	ball_velocity = ball_velocity.normalized() * ball_speed
-	ball_spin *= 0.92
+	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
 func check_ball_collisions() -> void:
@@ -423,14 +428,17 @@ func bounce_from_paddle(paddle: ColorRect, paddle_velocity: float, x_direction: 
 	var ball_center := ball.position.y
 	var hit_spot := (ball_center - paddle_center) / (PADDLE_SIZE.y / 2.0)
 	var round_edge_effect: float = sign(hit_spot) * hit_spot * hit_spot * ROUND_BALL_EDGE_LIFT
-	var swing_push := paddle_velocity / PADDLE_SPEED * 0.45
+	var surface_spin_speed := ball_spin * SPIN_SURFACE_SPEED
+	var brush_speed := paddle_velocity - surface_spin_speed
+	var swing_push := paddle_velocity / PADDLE_SPEED * 0.35
+	var brush_push := brush_speed * PADDLE_BRUSH_TO_ANGLE
 	var spin_push := ball_spin * SPIN_PADDLE_GRIP
 	var wobble := randf_range(-CONTROLLED_BOUNCE_WOBBLE, CONTROLLED_BOUNCE_WOBBLE)
-	var bounce_angle: float = clamp(hit_spot + round_edge_effect + swing_push + spin_push + wobble, -1.25, 1.25)
+	var bounce_angle: float = clamp(hit_spot + round_edge_effect + swing_push + brush_push + spin_push + wobble, -1.25, 1.25)
 
 	var swing_power: float = abs(paddle_velocity) * RACKET_POWER
 	ball_speed = min(ball_speed + PADDLE_HIT_SPEED_BOOST + swing_power, MAX_BALL_SPEED)
-	ball_spin = clamp(ball_spin + paddle_velocity * SPIN_FROM_SWING + (hit_spot + round_edge_effect) * SPIN_FROM_HIT_SPOT, -MAX_SPIN, MAX_SPIN)
+	ball_spin = clamp(ball_spin + brush_speed * PADDLE_BRUSH_TO_SPIN + (hit_spot + round_edge_effect) * HIT_SPOT_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 	ball_velocity = Vector2(x_direction, bounce_angle).normalized() * ball_speed
 	play_sound(paddle_sound)
 

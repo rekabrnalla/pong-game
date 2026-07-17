@@ -128,11 +128,22 @@ Spin does three things:
 - The ball curves a little while flying.
 - Wall and paddle bounces are changed a little by the spin.
 
+Paddle hits use a "brush" idea:
+
+- If the paddle moves with the ball's spin, it can add spin.
+- If the paddle moves against the ball's spin, it can reduce or reverse spin.
+- That brushing also changes the bounce angle a little.
+
+Wall hits use spin too. A spinning ball can skip slightly sideways when it hits the top or bottom wall, like a tennis ball with topspin or backspin.
+
 The important spin variables are:
 
 - `ball_spin`: how fast the ball is spinning.
 - `ball_rotation`: how the ball looks on screen.
 - `SPIN_CURVE_FORCE`: how much spin bends the flight path.
+- `PADDLE_BRUSH_TO_SPIN`: how much paddle brushing changes spin.
+- `PADDLE_BRUSH_TO_ANGLE`: how much paddle brushing changes the bounce angle.
+- `SPIN_WALL_SKIP`: how much wall bounces are affected by spin.
 - `MAX_SPIN`: how much spin is allowed.
 
 ## Round Ball Bounces
@@ -178,6 +189,8 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `MOTION_BLUR_POINTS` to make the ball trail longer or shorter.
 - Change `MOTION_BLUR_ALPHA` to make the trail stronger or lighter.
 - Change `SPIN_CURVE_FORCE` to make spin curve the ball more or less.
+- Change `PADDLE_BRUSH_TO_SPIN` to make paddle movement affect spin more or less.
+- Change `SPIN_WALL_SKIP` to make wall bounces skip more or less.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
 - Change `CONTROLLED_BOUNCE_WOBBLE` to make bounces more or less surprising.
 - Change `WINNING_SCORE` to decide how many points wins the game.
