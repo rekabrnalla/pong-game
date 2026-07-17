@@ -368,12 +368,12 @@ func move_ball(delta: float) -> void:
 
 	if ball.position.y - BALL_SIZE.y / 2.0 <= 0.0:
 		ball.position.y = BALL_SIZE.y / 2.0
-		bounce_from_wall()
+		bounce_from_wall(-1.0)
 		play_sound(wall_sound)
 
 	if ball.position.y + BALL_SIZE.y / 2.0 >= SCREEN_SIZE.y:
 		ball.position.y = SCREEN_SIZE.y - BALL_SIZE.y / 2.0
-		bounce_from_wall()
+		bounce_from_wall(1.0)
 		play_sound(wall_sound)
 
 	if ball.position.x < -BALL_SIZE.x:
@@ -397,12 +397,12 @@ func spin_ball(delta: float) -> void:
 	ball.rotation = ball_rotation
 
 
-func bounce_from_wall() -> void:
+func bounce_from_wall(wall_side: float) -> void:
 	var old_x_speed := ball_velocity.x
 	ball_velocity.y *= -1.0
-	ball_velocity.x += ball_spin * SPIN_WALL_SKIP
+	ball_velocity.x += -wall_side * ball_spin * SPIN_WALL_SKIP
 	ball_velocity = ball_velocity.normalized() * ball_speed
-	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
+	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + -wall_side * old_x_speed * WALL_SPEED_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
 func check_ball_collisions() -> void:
@@ -428,17 +428,18 @@ func bounce_from_paddle(paddle: ColorRect, paddle_velocity: float, x_direction: 
 	var ball_center := ball.position.y
 	var hit_spot := (ball_center - paddle_center) / (PADDLE_SIZE.y / 2.0)
 	var round_edge_effect: float = sign(hit_spot) * hit_spot * hit_spot * ROUND_BALL_EDGE_LIFT
-	var surface_spin_speed := ball_spin * SPIN_SURFACE_SPEED
+	var contact_side := -x_direction
+	var surface_spin_speed := contact_side * ball_spin * SPIN_SURFACE_SPEED
 	var brush_speed := paddle_velocity - surface_spin_speed
 	var swing_push := paddle_velocity / PADDLE_SPEED * 0.35
 	var brush_push := brush_speed * PADDLE_BRUSH_TO_ANGLE
-	var spin_push := ball_spin * SPIN_PADDLE_GRIP
+	var spin_push := contact_side * ball_spin * SPIN_PADDLE_GRIP
 	var wobble := randf_range(-CONTROLLED_BOUNCE_WOBBLE, CONTROLLED_BOUNCE_WOBBLE)
 	var bounce_angle: float = clamp(hit_spot + round_edge_effect + swing_push + brush_push + spin_push + wobble, -1.25, 1.25)
 
 	var swing_power: float = abs(paddle_velocity) * RACKET_POWER
 	ball_speed = min(ball_speed + PADDLE_HIT_SPEED_BOOST + swing_power, MAX_BALL_SPEED)
-	ball_spin = clamp(ball_spin + brush_speed * PADDLE_BRUSH_TO_SPIN + (hit_spot + round_edge_effect) * HIT_SPOT_TO_SPIN, -MAX_SPIN, MAX_SPIN)
+	ball_spin = clamp(ball_spin + contact_side * brush_speed * PADDLE_BRUSH_TO_SPIN + (hit_spot + round_edge_effect) * HIT_SPOT_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 	ball_velocity = Vector2(x_direction, bounce_angle).normalized() * ball_speed
 	play_sound(paddle_sound)
 

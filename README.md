@@ -132,9 +132,10 @@ Paddle hits use a "brush" idea:
 
 - If the paddle moves with the ball's spin, it can add spin.
 - If the paddle moves against the ball's spin, it can reduce or reverse spin.
+- The left and right sides of a spinning ball move opposite ways, so the code checks which paddle side was hit.
 - That brushing also changes the bounce angle a little.
 
-Wall hits use spin too. A spinning ball can skip slightly sideways when it hits the top or bottom wall, like a tennis ball with topspin or backspin.
+Wall hits use spin too. A spinning ball can skip slightly sideways when it hits the top or bottom wall, like a tennis ball with topspin or backspin. The top and bottom of the ball also move opposite ways, so those wall skips use opposite directions.
 
 The important spin variables are:
 
