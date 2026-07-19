@@ -29,11 +29,11 @@ Note: GitHub README files do not render iframe embeds, so the playable link abov
 
 - Left paddle: **W** and **S**
 - Right paddle: **Up Arrow** and **Down Arrow**
-- Mobile left paddle: drag on the left half of the screen
-- Mobile right paddle: drag on the right half of the screen
+- Mobile left paddle: drag, tap, or double-tap on the left half of the screen
+- Mobile right paddle: drag, tap, or double-tap on the right half of the screen
 - Left sprint: double-tap **W** or **S**
 - Right sprint: double-tap **Up Arrow** or **Down Arrow**
-- Restart: **R**
+- Restart: **R**, or click/tap the score after the game ends
 
 ## What The Code Is Doing
 
@@ -99,6 +99,7 @@ Each player can sprint for 2 seconds.
 
 - Left player: double-tap **W** or **S**
 - Right player: double-tap **Up Arrow** or **Down Arrow**
+- Mobile: double-tap your side of the screen
 
 After sprinting, that player has to wait 5 seconds before sprinting again.
 
@@ -126,9 +127,17 @@ The same web game can work on a phone or tablet.
 
 - Drag on the left half of the screen to move the left paddle.
 - Drag on the right half of the screen to move the right paddle.
-- On mobile, the paddle follows your finger directly, so sprint is not needed.
+- Tap your side of the screen to send your paddle toward that spot at normal speed.
+- Double-tap your side to sprint toward that spot.
 
 The keyboard controls still work on computer.
+
+## Restarting
+
+The first player to reach 7 points wins.
+
+When the game is over, a pop-up says to click or tap the score to restart.
+If someone clicks the score during the game, the game asks "Are you sure?" first so an accidental tap does not reset the match.
 
 ## Spin
 
