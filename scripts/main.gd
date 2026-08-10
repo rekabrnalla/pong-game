@@ -3,6 +3,8 @@ extends Node2D
 const SCREEN_SIZE := Vector2(1280, 720)
 const PADDLE_SIZE := Vector2(22, 130)
 const BALL_SIZE := Vector2(34, 34)
+const LEFT_PADDLE_X := 48.0
+const RIGHT_PADDLE_X := SCREEN_SIZE.x - 48.0 - PADDLE_SIZE.x
 const PADDLE_SPEED := 520.0
 const START_BALL_SPEED := 420.0
 const MAX_BALL_SPEED := 980.0
@@ -22,6 +24,14 @@ const WALL_SPEED_RETENTION := 0.995
 const MIN_RALLY_BALL_SPEED := 300.0
 const MIN_SIDEWAYS_SPEED := 70.0
 const SIDEWAYS_STALL_SECONDS := 1.25
+const DRIBBLE_GRAVITY := 1150.0
+const DRIBBLE_BOUNCE_RETENTION := 0.55
+const DRIBBLE_GROUND_FRICTION := 0.82
+const DRIBBLE_STOP_VERTICAL_SPEED := 58.0
+const BALL_RETURN_SPEED := 190.0
+const RETURN_BOUNCE_GRAVITY := 950.0
+const RETURN_BOUNCE_MIN_SPEED := 165.0
+const RETURN_BOUNCE_MAX_SPEED := 215.0
 const SPIN_PADDLE_GRIP := 0.10
 const SPIN_DECAY := 0.995
 const VISUAL_SPIN_MULTIPLIER := 2.0
@@ -32,6 +42,17 @@ const PADDLE_END_PHYSICS_BLEND := 0.82
 const PADDLE_MIN_AWAY_COMPONENT := 0.28
 const PADDLE_SEPARATION_DISTANCE := 0.5
 const MAX_BALL_STEP_DISTANCE := 8.0
+const SLAM_LUNGE_DISTANCE := 18.0
+const SLAM_LUNGE_SECONDS := 0.22
+const SLAM_POWER_MULTIPLIER := 2.35
+const SLAM_BALL_SPEED_MULTIPLIER := 1.22
+const SLAM_SPIN_MULTIPLIER := 1.65
+const SLAM_SHUDDER_DISTANCE := 5.0
+const SLAM_SHUDDER_SECONDS := 0.34
+const SLAM_SHUDDER_FREQUENCY := 24.0
+const SERVE_SWING_TO_ANGLE := 0.75
+const SERVE_HIT_SPOT_TO_ANGLE := 0.25
+const SERVE_RANDOM_ANGLE := 0.05
 const DOUBLE_TAP_WINDOW := 0.30
 const SPRINT_MULTIPLIER := 1.65
 const SPRINT_SECONDS := 2.0
@@ -47,6 +68,8 @@ const PADDLE_MOTION_BLUR_POINTS := 8
 const PADDLE_MOTION_BLUR_ALPHA := 0.22
 const WINNING_SCORE := 7
 
+enum BallMode { PLAYING, DRIBBLING, BOUNCING_BACK, HELD }
+
 var left_score := 0
 var right_score := 0
 var ball_speed := START_BALL_SPEED
@@ -55,6 +78,15 @@ var ball_spin := 0.0
 var ball_rotation := 0.0
 var sideways_stall_time := 0.0
 var last_hitter_direction := 0.0
+var ball_mode := BallMode.PLAYING
+var held_by_direction := 0.0
+var held_ball_offset_y := 0.0
+var left_both_was_down := false
+var right_both_was_down := false
+var left_slam_time_left := 0.0
+var right_slam_time_left := 0.0
+var left_slam_shudder_left := 0.0
+var right_slam_shudder_left := 0.0
 var left_paddle_velocity := 0.0
 var right_paddle_velocity := 0.0
 var left_last_sprint_tap_time := -10.0
@@ -111,6 +143,7 @@ var paddle_sound: AudioStreamPlayer
 var wall_sound: AudioStreamPlayer
 var score_sound: AudioStreamPlayer
 var win_sound: AudioStreamPlayer
+var slam_sound: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -129,7 +162,9 @@ func _process(delta: float) -> void:
 	if game_over:
 		return
 
+	update_slam_controls(delta)
 	move_paddles(delta)
+	update_paddle_slam_positions()
 	move_ball(delta)
 	spin_ball(delta)
 	update_help_text()
@@ -310,6 +345,10 @@ func create_sound_players() -> void:
 	wall_sound = make_sound_player("WallSound", 420.0, 0.05, 0.25)
 	score_sound = make_sound_player("ScoreSound", 180.0, 0.22, 0.35)
 	win_sound = make_sound_player("WinSound", 920.0, 0.35, 0.30)
+	slam_sound = AudioStreamPlayer.new()
+	slam_sound.name = "SlamSound"
+	slam_sound.stream = make_slam_boom()
+	add_child(slam_sound)
 
 
 func make_sound_player(node_name: String, frequency: float, seconds: float, volume: float) -> AudioStreamPlayer:
@@ -339,6 +378,33 @@ func make_tone(frequency: float, seconds: float, volume: float) -> AudioStreamWA
 	tone.stereo = false
 	tone.data = data
 	return tone
+
+
+func make_slam_boom() -> AudioStreamWAV:
+	var sample_rate := 22050
+	var seconds := 0.58
+	var sample_count := int(sample_rate * seconds)
+	var data := PackedByteArray()
+	var phase := 0.0
+	data.resize(sample_count * 2)
+
+	for i in range(sample_count):
+		var time := float(i) / float(sample_rate)
+		var progress := time / seconds
+		var frequency: float = lerp(105.0, 38.0, progress)
+		phase += TAU * frequency / float(sample_rate)
+		var body := sin(phase) * exp(-time * 5.2)
+		var sub := sin(phase * 0.48) * exp(-time * 3.8) * 0.58
+		var crackle := randf_range(-1.0, 1.0) * exp(-time * 28.0) * 0.34
+		var sample_value: float = clamp((body + sub + crackle) * 0.72, -1.0, 1.0)
+		data.encode_s16(i * 2, int(sample_value * 32767.0))
+
+	var boom := AudioStreamWAV.new()
+	boom.format = AudioStreamWAV.FORMAT_16_BITS
+	boom.mix_rate = sample_rate
+	boom.stereo = false
+	boom.data = data
+	return boom
 
 
 func play_sound(player: AudioStreamPlayer) -> void:
@@ -418,6 +484,11 @@ func handle_touch_press(event: InputEventScreenTouch) -> void:
 		return
 
 	var is_left_side := touch_position.x < SCREEN_SIZE.x / 2.0
+	if event.pressed and ball_mode == BallMode.HELD:
+		if (is_left_side and held_by_direction < 0.0) or (not is_left_side and held_by_direction > 0.0):
+			serve_held_ball()
+			return
+
 	var now := Time.get_ticks_msec() / 1000.0
 
 	if event.pressed:
@@ -599,6 +670,66 @@ func move_paddle_toward_target(paddle: Panel, target_y: float, speed: float, del
 	return abs(target_top - new_y) > TAP_TARGET_STOP_DISTANCE
 
 
+func update_slam_controls(delta: float) -> void:
+	var left_was_lunging := left_slam_time_left > 0.0
+	var right_was_lunging := right_slam_time_left > 0.0
+	left_slam_time_left = max(left_slam_time_left - delta, 0.0)
+	right_slam_time_left = max(right_slam_time_left - delta, 0.0)
+
+	if left_was_lunging and left_slam_time_left == 0.0 and left_slam_shudder_left == 0.0:
+		left_slam_shudder_left = SLAM_SHUDDER_SECONDS
+	if right_was_lunging and right_slam_time_left == 0.0 and right_slam_shudder_left == 0.0:
+		right_slam_shudder_left = SLAM_SHUDDER_SECONDS
+
+	left_slam_shudder_left = max(left_slam_shudder_left - delta, 0.0)
+	right_slam_shudder_left = max(right_slam_shudder_left - delta, 0.0)
+
+	var left_both_down := Input.is_key_pressed(KEY_W) and Input.is_key_pressed(KEY_S)
+	var right_both_down := Input.is_key_pressed(KEY_UP) and Input.is_key_pressed(KEY_DOWN)
+
+	if left_both_down and not left_both_was_down:
+		handle_both_keys_pressed(-1.0)
+	if right_both_down and not right_both_was_down:
+		handle_both_keys_pressed(1.0)
+
+	left_both_was_down = left_both_down
+	right_both_was_down = right_both_down
+
+
+func handle_both_keys_pressed(player_direction: float) -> void:
+	if ball_mode == BallMode.HELD and held_by_direction == player_direction:
+		serve_held_ball()
+		return
+
+	if ball_mode != BallMode.PLAYING:
+		return
+
+	if player_direction < 0.0:
+		left_slam_time_left = SLAM_LUNGE_SECONDS
+		left_slam_shudder_left = 0.0
+	else:
+		right_slam_time_left = SLAM_LUNGE_SECONDS
+		right_slam_shudder_left = 0.0
+
+
+func update_paddle_slam_positions() -> void:
+	left_paddle.position.x = LEFT_PADDLE_X + slam_visual_offset(left_slam_time_left, left_slam_shudder_left)
+	right_paddle.position.x = RIGHT_PADDLE_X - slam_visual_offset(right_slam_time_left, right_slam_shudder_left)
+
+
+func slam_visual_offset(lunge_time_left: float, shudder_time_left: float) -> float:
+	if lunge_time_left > 0.0:
+		var lunge_progress := 1.0 - lunge_time_left / SLAM_LUNGE_SECONDS
+		return sin(lunge_progress * PI) * SLAM_LUNGE_DISTANCE
+
+	if shudder_time_left > 0.0:
+		var shudder_elapsed := SLAM_SHUDDER_SECONDS - shudder_time_left
+		var shudder_strength := shudder_time_left / SLAM_SHUDDER_SECONDS
+		return sin(shudder_elapsed * SLAM_SHUDDER_FREQUENCY * TAU) * SLAM_SHUDDER_DISTANCE * shudder_strength
+
+	return 0.0
+
+
 func update_sprint_timers(delta: float) -> void:
 	var left_was_sprinting := left_sprint_time_left > 0.0
 	var right_was_sprinting := right_sprint_time_left > 0.0
@@ -622,17 +753,17 @@ func check_sprint_taps() -> void:
 	var right_up_is_down := Input.is_key_pressed(KEY_UP)
 	var right_down_is_down := Input.is_key_pressed(KEY_DOWN)
 
-	if left_up_is_down and not left_up_was_down:
-		check_left_sprint_tap(now)
+	if not (left_up_is_down and left_down_is_down):
+		if left_up_is_down and not left_up_was_down:
+			check_left_sprint_tap(now)
+		if left_down_is_down and not left_down_was_down:
+			check_left_sprint_tap(now)
 
-	if left_down_is_down and not left_down_was_down:
-		check_left_sprint_tap(now)
-
-	if right_up_is_down and not right_up_was_down:
-		check_right_sprint_tap(now)
-
-	if right_down_is_down and not right_down_was_down:
-		check_right_sprint_tap(now)
+	if not (right_up_is_down and right_down_is_down):
+		if right_up_is_down and not right_up_was_down:
+			check_right_sprint_tap(now)
+		if right_down_is_down and not right_down_was_down:
+			check_right_sprint_tap(now)
 
 	left_up_was_down = left_up_is_down
 	left_down_was_down = left_down_is_down
@@ -667,6 +798,18 @@ func start_right_sprint() -> void:
 
 
 func move_ball(delta: float) -> void:
+	match ball_mode:
+		BallMode.PLAYING:
+			move_playing_ball(delta)
+		BallMode.DRIBBLING:
+			move_dribbling_ball(delta)
+		BallMode.BOUNCING_BACK:
+			move_bouncing_ball_to_server(delta)
+		BallMode.HELD:
+			update_held_ball_position()
+
+
+func move_playing_ball(delta: float) -> void:
 	save_ball_trail_point()
 
 	var step_count: int = max(1, int(ceil(ball_velocity.length() * delta / MAX_BALL_STEP_DISTANCE)))
@@ -701,9 +844,171 @@ func move_ball(delta: float) -> void:
 			after_score()
 			return
 
-		if ball_needs_re_serve(step_delta):
-			re_serve_to_last_hitter()
+		if ball_should_start_dribbling(step_delta):
+			begin_dribbling()
 			return
+
+
+func move_dribbling_ball(delta: float) -> void:
+	save_ball_trail_point()
+	var radius := BALL_SIZE.x / 2.0
+	ball_velocity.y += DRIBBLE_GRAVITY * delta
+	ball.position += ball_velocity * delta
+	ball_speed = ball_velocity.length()
+
+	if ball.position.y - radius <= 0.0:
+		ball.position.y = radius
+		ball_velocity.y = abs(ball_velocity.y) * DRIBBLE_BOUNCE_RETENTION
+		play_sound(wall_sound)
+
+	if ball.position.y + radius >= SCREEN_SIZE.y:
+		ball.position.y = SCREEN_SIZE.y - radius
+		if abs(ball_velocity.y) <= DRIBBLE_STOP_VERTICAL_SPEED:
+			begin_bouncing_to_server()
+			return
+
+		ball_velocity.y = -abs(ball_velocity.y) * DRIBBLE_BOUNCE_RETENTION
+		ball_velocity.x *= DRIBBLE_GROUND_FRICTION
+		ball_spin *= DRIBBLE_GROUND_FRICTION
+		play_sound(wall_sound)
+
+	if ball.position.x < radius:
+		ball.position.x = radius
+		ball_velocity.x = abs(ball_velocity.x) * 0.25
+	if ball.position.x > SCREEN_SIZE.x - radius:
+		ball.position.x = SCREEN_SIZE.x - radius
+		ball_velocity.x = -abs(ball_velocity.x) * 0.25
+
+
+func move_bouncing_ball_to_server(delta: float) -> void:
+	save_ball_trail_point()
+	var radius := BALL_SIZE.x / 2.0
+	var server_paddle := get_server_paddle()
+
+	if try_collect_returning_ball(server_paddle):
+		return
+
+	var waiting_x := server_paddle.position.x - radius
+	if last_hitter_direction < 0.0:
+		waiting_x = server_paddle.position.x + PADDLE_SIZE.x + radius
+
+	var distance := waiting_x - ball.position.x
+	var max_step := BALL_RETURN_SPEED * delta
+	if abs(distance) <= max_step:
+		ball.position.x = waiting_x
+		ball_velocity.x = 0.0
+	else:
+		ball_velocity.x = sign(distance) * BALL_RETURN_SPEED
+		ball.position.x += ball_velocity.x * delta
+
+	ball_velocity.y += RETURN_BOUNCE_GRAVITY * delta
+	ball.position.y += ball_velocity.y * delta
+	if ball.position.y + radius >= SCREEN_SIZE.y:
+		ball.position.y = SCREEN_SIZE.y - radius
+		ball_velocity.y = -randf_range(RETURN_BOUNCE_MIN_SPEED, RETURN_BOUNCE_MAX_SPEED)
+		play_sound(wall_sound)
+
+	ball_speed = ball_velocity.length()
+	try_collect_returning_ball(server_paddle)
+
+
+func begin_dribbling() -> void:
+	ball_mode = BallMode.DRIBBLING
+	if is_zero_approx(last_hitter_direction):
+		last_hitter_direction = -sign(ball_velocity.x)
+		if is_zero_approx(last_hitter_direction):
+			last_hitter_direction = -1.0 if randf() < 0.5 else 1.0
+
+	ball_velocity.x *= 0.35
+	sideways_stall_time = 0.0
+
+
+func begin_bouncing_to_server() -> void:
+	ball_mode = BallMode.BOUNCING_BACK
+	ball.position.y = SCREEN_SIZE.y - BALL_SIZE.y / 2.0
+	ball_velocity = Vector2(
+		last_hitter_direction * BALL_RETURN_SPEED,
+		-randf_range(RETURN_BOUNCE_MIN_SPEED, RETURN_BOUNCE_MAX_SPEED)
+	)
+	ball_speed = ball_velocity.length()
+	ball_spin = 0.0
+	sideways_stall_time = 0.0
+	ball_trail.clear()
+
+
+func get_server_paddle() -> Panel:
+	if last_hitter_direction < 0.0:
+		return left_paddle
+	return right_paddle
+
+
+func try_collect_returning_ball(server_paddle: Panel) -> bool:
+	var away_direction := -last_hitter_direction
+	var contact := circle_paddle_contact(ball.position, BALL_SIZE.x / 2.0, server_paddle, away_direction)
+	if contact.is_empty():
+		return false
+
+	ball_mode = BallMode.HELD
+	held_by_direction = last_hitter_direction
+	var paddle_center_y := server_paddle.position.y + PADDLE_SIZE.y / 2.0
+	held_ball_offset_y = clamp(
+		ball.position.y - paddle_center_y,
+		-PADDLE_SIZE.y / 2.0 + BALL_SIZE.y / 2.0,
+		PADDLE_SIZE.y / 2.0 - BALL_SIZE.y / 2.0
+	)
+	ball_velocity = Vector2.ZERO
+	ball_speed = 0.0
+	ball_spin = 0.0
+	ball_trail.clear()
+	update_held_ball_position()
+	play_sound(paddle_sound)
+	return true
+
+
+func update_held_ball_position() -> void:
+	var server_paddle := get_server_paddle()
+	var radius := BALL_SIZE.x / 2.0
+	if held_by_direction < 0.0:
+		ball.position.x = server_paddle.position.x + PADDLE_SIZE.x + radius
+	else:
+		ball.position.x = server_paddle.position.x - radius
+
+	ball.position.y = clamp(
+		server_paddle.position.y + PADDLE_SIZE.y / 2.0 + held_ball_offset_y,
+		radius,
+		SCREEN_SIZE.y - radius
+	)
+
+
+func serve_held_ball() -> void:
+	if ball_mode != BallMode.HELD:
+		return
+
+	var serve_direction := -held_by_direction
+	var server_paddle_velocity := right_paddle_velocity
+	if held_by_direction < 0.0:
+		server_paddle_velocity = left_paddle_velocity
+
+	var held_hit_spot: float = clamp(held_ball_offset_y / (PADDLE_SIZE.y / 2.0), -1.0, 1.0)
+	var swing_angle := server_paddle_velocity / PADDLE_SPEED * SERVE_SWING_TO_ANGLE
+	var release_angle: float = clamp(
+		swing_angle + held_hit_spot * SERVE_HIT_SPOT_TO_ANGLE + randf_range(-SERVE_RANDOM_ANGLE, SERVE_RANDOM_ANGLE),
+		-1.15,
+		1.15
+	)
+	var contact_side := -serve_direction
+
+	ball_mode = BallMode.PLAYING
+	ball_speed = min(START_BALL_SPEED + abs(server_paddle_velocity) * RACKET_POWER, MAX_BALL_SPEED)
+	ball_spin = clamp(
+		contact_side * server_paddle_velocity * PADDLE_BRUSH_TO_SPIN + held_hit_spot * HIT_SPOT_TO_SPIN,
+		-MAX_SPIN,
+		MAX_SPIN
+	)
+	sideways_stall_time = 0.0
+	ball_trail.clear()
+	ball_velocity = Vector2(serve_direction, release_angle).normalized() * ball_speed
+	play_sound(paddle_sound)
 
 
 func save_ball_trail_point() -> void:
@@ -723,6 +1028,14 @@ func save_paddle_trail_point(paddle_trail: Array[Vector2], old_position: Vector2
 
 
 func spin_ball(delta: float) -> void:
+	if ball_mode == BallMode.BOUNCING_BACK:
+		ball_rotation += ball_velocity.x / (BALL_SIZE.x / 2.0) * delta
+		ball.rotation = ball_rotation
+		return
+
+	if ball_mode == BallMode.HELD:
+		return
+
 	ball_spin *= pow(SPIN_DECAY, delta * 60.0)
 	ball_rotation += ball_spin * VISUAL_SPIN_MULTIPLIER * delta
 	ball.rotation = ball_rotation
@@ -744,7 +1057,7 @@ func bounce_from_wall(wall_side: float) -> void:
 	ball_spin = clamp(ball_spin * WALL_SPIN_LOSS + -wall_side * friction_impulse * WALL_FRICTION_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
-func ball_needs_re_serve(delta: float) -> bool:
+func ball_should_start_dribbling(delta: float) -> bool:
 	if ball_speed < MIN_RALLY_BALL_SPEED:
 		return true
 
@@ -754,23 +1067,6 @@ func ball_needs_re_serve(delta: float) -> bool:
 		sideways_stall_time = 0.0
 
 	return sideways_stall_time >= SIDEWAYS_STALL_SECONDS
-
-
-func re_serve_to_last_hitter() -> void:
-	var x_direction := last_hitter_direction
-	if is_zero_approx(x_direction):
-		x_direction = -1.0 if randf() < 0.5 else 1.0
-
-	ball.position = SCREEN_SIZE / 2.0
-	ball_speed = START_BALL_SPEED
-	ball_spin = 0.0
-	ball_rotation = 0.0
-	ball.rotation = 0.0
-	ball_trail.clear()
-	sideways_stall_time = 0.0
-	var y_direction := randf_range(-0.45, 0.45)
-	ball_velocity = Vector2(x_direction, y_direction).normalized() * ball_speed
-	play_sound(paddle_sound)
 
 
 func check_ball_collisions() -> void:
@@ -846,14 +1142,35 @@ func bounce_from_paddle(paddle: Panel, paddle_velocity: float, x_direction: floa
 		bounce_direction.x = x_direction * PADDLE_MIN_AWAY_COMPONENT
 		bounce_direction = bounce_direction.normalized()
 
+	var slam_active := left_slam_time_left > 0.0 if x_direction > 0.0 else right_slam_time_left > 0.0
+	var hit_multiplier := SLAM_POWER_MULTIPLIER if slam_active else 1.0
 	var swing_power: float = abs(paddle_velocity) * RACKET_POWER
-	ball_speed = min(max(ball_speed, START_BALL_SPEED) + PADDLE_HIT_SPEED_BOOST + swing_power, MAX_BALL_SPEED)
-	ball_spin = clamp(ball_spin + contact_side * brush_speed * PADDLE_BRUSH_TO_SPIN + (hit_spot + round_edge_effect) * HIT_SPOT_TO_SPIN, -MAX_SPIN, MAX_SPIN)
+	var normal_hit_power := PADDLE_HIT_SPEED_BOOST + swing_power
+	var spin_change := contact_side * brush_speed * PADDLE_BRUSH_TO_SPIN + (hit_spot + round_edge_effect) * HIT_SPOT_TO_SPIN
+	var incoming_speed: float = max(ball_speed, START_BALL_SPEED)
+	if slam_active:
+		incoming_speed *= SLAM_BALL_SPEED_MULTIPLIER
+	ball_speed = min(incoming_speed + normal_hit_power * hit_multiplier, MAX_BALL_SPEED)
+	ball_spin = clamp(ball_spin + spin_change * (SLAM_SPIN_MULTIPLIER if slam_active else 1.0), -MAX_SPIN, MAX_SPIN)
 	ball_velocity = bounce_direction * ball_speed
 	ball.position += contact_normal * (float(contact["penetration"]) + PADDLE_SEPARATION_DISTANCE)
 	last_hitter_direction = -x_direction
 	sideways_stall_time = 0.0
-	play_sound(paddle_sound)
+
+	if slam_active:
+		finish_successful_slam(x_direction)
+	else:
+		play_sound(paddle_sound)
+
+
+func finish_successful_slam(x_direction: float) -> void:
+	if x_direction > 0.0:
+		left_slam_time_left = 0.0
+		left_slam_shudder_left = SLAM_SHUDDER_SECONDS
+	else:
+		right_slam_time_left = 0.0
+		right_slam_shudder_left = SLAM_SHUDDER_SECONDS
+	play_sound(slam_sound)
 
 
 func after_score() -> void:
@@ -873,8 +1190,8 @@ func after_score() -> void:
 
 
 func reset_round() -> void:
-	left_paddle.position = Vector2(48, SCREEN_SIZE.y / 2.0 - PADDLE_SIZE.y / 2.0)
-	right_paddle.position = Vector2(SCREEN_SIZE.x - 48 - PADDLE_SIZE.x, SCREEN_SIZE.y / 2.0 - PADDLE_SIZE.y / 2.0)
+	left_paddle.position = Vector2(LEFT_PADDLE_X, SCREEN_SIZE.y / 2.0 - PADDLE_SIZE.y / 2.0)
+	right_paddle.position = Vector2(RIGHT_PADDLE_X, SCREEN_SIZE.y / 2.0 - PADDLE_SIZE.y / 2.0)
 	ball.position = SCREEN_SIZE / 2.0
 	ball_speed = START_BALL_SPEED
 	ball_spin = 0.0
@@ -882,6 +1199,13 @@ func reset_round() -> void:
 	ball.rotation = 0.0
 	sideways_stall_time = 0.0
 	last_hitter_direction = 0.0
+	ball_mode = BallMode.PLAYING
+	held_by_direction = 0.0
+	held_ball_offset_y = 0.0
+	left_slam_time_left = 0.0
+	right_slam_time_left = 0.0
+	left_slam_shudder_left = 0.0
+	right_slam_shudder_left = 0.0
 	ball_trail.clear()
 	left_paddle_trail.clear()
 	right_paddle_trail.clear()
@@ -901,10 +1225,19 @@ func update_score_text() -> void:
 
 
 func update_help_text() -> void:
+	if ball_mode == BallMode.HELD:
+		if touch_controls_seen:
+			help_label.text = "Tap your side to serve"
+		elif held_by_direction < 0.0:
+			help_label.text = "Left player: press W + S together to serve"
+		else:
+			help_label.text = "Right player: press Up + Down together to serve"
+		return
+
 	if touch_controls_seen:
 		help_label.text = "Touch: drag to follow, tap to move, double-tap to sprint"
 	else:
-		help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    R restart"
+		help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    Together: slam    R restart"
 
 
 func sprint_status(sprint_time_left: float, cooldown_left: float) -> String:
@@ -928,6 +1261,8 @@ func reset_sprints() -> void:
 	left_down_was_down = false
 	right_up_was_down = false
 	right_down_was_down = false
+	left_both_was_down = false
+	right_both_was_down = false
 	left_touch_active = false
 	right_touch_active = false
 	left_touch_index = -1

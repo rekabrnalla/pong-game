@@ -33,6 +33,8 @@ Note: GitHub README files do not render iframe embeds, so the playable link abov
 - Mobile right paddle: drag, tap, or double-tap on the right half of the screen
 - Left sprint: double-tap **W** or **S**
 - Right sprint: double-tap **Up Arrow** or **Down Arrow**
+- Left slam or held-ball serve: press **W** and **S** together
+- Right slam or held-ball serve: press **Up Arrow** and **Down Arrow** together
 - Restart: **R**, or click/tap the score after the game ends
 
 ## What The Code Is Doing
@@ -109,6 +111,21 @@ The code uses:
 - `SPRINT_MULTIPLIER`
 - `SPRINT_SECONDS`
 - `SPRINT_COOLDOWN_SECONDS`
+
+## Slam And Held-Ball Serve
+
+Press both of your movement keys together during normal play to slam.
+The paddle lunges inward, gives the ball a stronger hit, plays a deep boom, and shudders as it returns.
+
+If the ball loses its sideways motion, it begins to dribble against the bottom wall. It eventually changes to small hops back toward the player who last hit it. The ball keeps gently hopping near that player until their paddle collects it, so they can choose where the ball touches the paddle.
+
+After the ball sticks to the paddle:
+
+- Left player: press **W** and **S** together to serve.
+- Right player: press **Up Arrow** and **Down Arrow** together to serve.
+- Mobile player: tap the side holding the ball to serve.
+
+Move the paddle as you press the second serve key to aim the ball and add spin. A faster release motion creates a steeper, faster serve with more spin.
 
 ## Motion Blur
 
