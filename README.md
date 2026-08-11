@@ -172,6 +172,8 @@ On mobile, only the small area immediately around the visible score numbers resp
 
 When exactly one ball is playing, a random countdown moves toward zero. When it reaches zero, a robot octopus enters at a slower speed and bounces around the middle third of the court for about 20 seconds. Keeping its entire collision circle in the center third prevents unfair surprise hits close to either paddle. The timer pauses during recovery and multiball.
 
+A gold fuse above the score shows that hidden countdown. It begins as a full line, then burns inward from both ends. When the two bright ends meet in the center, the alien appears. A dim fuse means the countdown is paused. Scoring does not restart the fuse, so several short rallies cannot postpone the alien forever.
+
 When the ball gets close, the alien turns very slightly toward a point ahead of the moving ball. Its turn rate is deliberately small, so it can drift into the ball's path without acting like a heat-seeking missile. After 20 seconds, the alien takes the nearer top or bottom exit, flying vertically so it never enters a paddle zone. Its departure never scores a point, resets the round, or serves a new ball.
 
 Scoring a point does not remove the alien or restart its timer. It keeps roaming through the next serve until its 20 seconds end or a ball hits it. Even after the winning point, an existing alien finishes its timer and flies away behind the game-over screen. Starting a completely new match still clears the court.

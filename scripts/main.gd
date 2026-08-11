@@ -101,6 +101,9 @@ const ALIEN_MOMENTUM_SHARE := 0.40
 const ALIEN_EXPLOSION_SPEED_BOOST := 45.0
 const ALIEN_EXPLOSION_HORIZONTAL_SHARE := 0.78
 const ALIEN_OFFSCREEN_MARGIN := 80.0
+const ALIEN_FUSE_WIDTH := 220.0
+const ALIEN_FUSE_Y := 14.0
+const ALIEN_FUSE_THICKNESS := 5.0
 
 enum BallMode { PLAYING, DRIBBLING, BOUNCING_BACK, HELD }
 
@@ -160,6 +163,7 @@ var alien: RobotOctopus
 var alien_velocity := Vector2.ZERO
 var alien_flight_time := 0.0
 var alien_countdown := 0.0
+var alien_countdown_start := 0.0
 var alien_is_exiting := false
 
 var left_paddle: Panel
@@ -237,6 +241,7 @@ func _draw() -> void:
 	# _draw does not change physics. It paints the latest state calculated by
 	# _process, starting with the background and ending with the center line.
 	draw_rect(Rect2(Vector2.ZERO, SCREEN_SIZE), Color(0.05, 0.06, 0.08), true)
+	draw_alien_countdown_fuse()
 	draw_touch_guides()
 	draw_paddle_motion_blur(left_paddle_trail, Color(0.2, 0.8, 1.0), left_paddle_velocity)
 	draw_paddle_motion_blur(right_paddle_trail, Color(1.0, 0.35, 0.35), right_paddle_velocity)
@@ -300,6 +305,37 @@ func draw_paddle_shape(draw_position: Vector2, color: Color) -> void:
 	)
 	draw_circle(draw_position + Vector2(radius, radius), radius, color)
 	draw_circle(draw_position + Vector2(radius, PADDLE_SIZE.y - radius), radius, color)
+
+
+func draw_alien_countdown_fuse() -> void:
+	# The full line is the original random wait. As time runs out, both outside
+	# ends move toward the center. Their meeting point is the alien's spawn time.
+	if game_over or alien != null or alien_countdown_start <= 0.0:
+		return
+
+	var center_x := SCREEN_SIZE.x / 2.0
+	var full_left := Vector2(center_x - ALIEN_FUSE_WIDTH / 2.0, ALIEN_FUSE_Y)
+	var full_right := Vector2(center_x + ALIEN_FUSE_WIDTH / 2.0, ALIEN_FUSE_Y)
+	var gold := Color(1.0, 0.72, 0.12)
+	var brightness := 1.0 if alien_spawn_is_eligible() else 0.42
+	var remaining_half_width := alien_fuse_remaining_half_width()
+	var left_end := Vector2(center_x - remaining_half_width, ALIEN_FUSE_Y)
+	var right_end := Vector2(center_x + remaining_half_width, ALIEN_FUSE_Y)
+
+	# A faint track makes the amount already burned away easy to compare.
+	draw_line(full_left, full_right, Color(gold.r, gold.g, gold.b, 0.18), 2.0)
+	if remaining_half_width > 0.0:
+		var live_gold := Color(gold.r, gold.g, gold.b, brightness)
+		draw_line(left_end, right_end, live_gold, ALIEN_FUSE_THICKNESS)
+		draw_circle(left_end, ALIEN_FUSE_THICKNESS * 0.65, live_gold)
+		draw_circle(right_end, ALIEN_FUSE_THICKNESS * 0.65, live_gold)
+
+
+func alien_fuse_remaining_half_width() -> float:
+	if alien_countdown_start <= 0.0:
+		return 0.0
+	var time_fraction: float = clamp(alien_countdown / alien_countdown_start, 0.0, 1.0)
+	return ALIEN_FUSE_WIDTH / 2.0 * time_fraction
 
 
 # --- Scene objects, interface, and generated sounds -------------------------
@@ -555,6 +591,7 @@ func roll_next_alien_delay() -> void:
 	# The random roll is a countdown in seconds. Keeping a minimum prevents two
 	# aliens from appearing almost on top of each other.
 	alien_countdown = randf_range(ALIEN_MIN_DELAY, ALIEN_MAX_DELAY)
+	alien_countdown_start = alien_countdown
 
 
 func alien_spawn_is_eligible() -> bool:
@@ -1707,7 +1744,9 @@ func reset_round() -> void:
 		x_direction = -1.0
 	var y_direction := randf_range(-0.6, 0.6)
 	create_ball(SCREEN_SIZE / 2.0, Vector2(x_direction, y_direction).normalized() * START_BALL_SPEED)
-	if alien == null:
+	# A score does not reroll the alien timer. Otherwise several short rallies in
+	# a row could postpone the alien forever. Zero means this is a fresh match.
+	if alien == null and alien_countdown <= 0.0:
 		roll_next_alien_delay()
 	update_score_text()
 
@@ -1787,4 +1826,6 @@ func new_game() -> void:
 	# Restarting the whole match is different from scoring one point, so it does
 	# clear any alien left from the previous match.
 	remove_alien(false)
+	alien_countdown = 0.0
+	alien_countdown_start = 0.0
 	reset_round()
