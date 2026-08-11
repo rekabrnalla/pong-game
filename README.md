@@ -39,22 +39,33 @@ Note: GitHub README files do not render iframe embeds, so the playable link abov
 
 ## What The Code Is Doing
 
-Think of the game as three toys on a table:
+Think of the game as several toys on a table:
 
-- The left paddle is a rectangle.
-- The right paddle is a rectangle.
-- The ball is a little circle that can spin.
-- It has an outline and tennis-ball lines so it is easy to see while moving.
+- The left and right paddles are rounded capsules.
+- Each ball is a little circle with rotating markings that show spin.
+- A robot octopus occasionally flies across the court.
+- The score and timers belong to the whole match.
+- Speed, spin, and motion trails belong to each individual ball.
 
 Every frame, Godot asks: "What changed since the last frame?"
 
 The script answers:
 
 1. Did a player press a key? Move that paddle.
-2. Move the ball in the direction it is already going.
-3. Did the ball hit the top or bottom wall? Bounce it.
-4. Did the ball hit a paddle? Bounce it back.
-5. Did the ball go past a paddle? Give the other player a point.
+2. Is one ball playing? Count down toward the next alien visit.
+3. Move every active ball in the direction it is already going.
+4. Did a ball hit a wall, paddle, or alien? Handle that collision.
+5. Did a ball go past a paddle? Score and remove only that ball.
+6. Are no balls left? Start the next rally.
+
+## Code Map
+
+- `scripts/main.gd`: match rules, controls, physics, scoring, alien timing, and sounds.
+- `scripts/ball_state_data.gd`: the values owned by one ball.
+- `scripts/spinning_ball.gd`: procedural ball drawing.
+- `scripts/robot_octopus.gd`: procedural alien drawing and tentacle animation.
+
+The scripts include section headings and teaching comments. Start with `_process()` in `main.gd` to see the order of one game frame.
 
 ## How To Share With Friends
 
@@ -131,7 +142,7 @@ Move the paddle as you press the second serve key to aim the ball and add spin. 
 
 The ball now leaves a short fading trail behind it.
 
-The code saves a few old ball positions in `ball_trail`, then draws smaller, see-through circles there. This makes the ball look faster without changing the physics.
+Each ball saves a few old positions in its own `trail`, then the main game draws smaller, see-through circles there. Separate trails prevent two balls from being connected by one incorrect streak.
 
 The code uses:
 
@@ -156,6 +167,32 @@ The first player to reach 7 points wins.
 When the game is over, a pop-up says to click or tap the score to restart.
 If someone clicks the score during the game, the game asks "Are you sure?" first so an accidental tap does not reset the match.
 
+## Robot Octopus And Multiball
+
+When exactly one ball is playing, a random countdown moves toward zero. When it reaches zero, a robot octopus enters at a slower speed and bounces around the middle third of the court for about 20 seconds. Keeping its entire collision circle in the center third prevents unfair surprise hits close to either paddle. The timer pauses during recovery and multiball.
+
+When the ball gets close, the alien turns very slightly toward a point ahead of the moving ball. Its turn rate is deliberately small, so it can drift into the ball's path without acting like a heat-seeking missile. After 20 seconds, the alien takes the nearer top or bottom exit, flying vertically so it never enters a paddle zone. Its departure never scores a point, resets the round, or serves a new ball.
+
+Scoring a point does not remove the alien or restart its timer. It keeps roaming through the next serve until its 20 seconds end or a ball hits it. Even after the winning point, an existing alien finishes its timer and flies away behind the game-over screen. Starting a completely new match still clears the court.
+
+The octopus is drawn from circles, lines, and polygons. Each mechanical tentacle uses a sine wave with a different starting phase, so the arms wiggle together without moving identically.
+
+If a ball hits the alien:
+
+- The original ball keeps going in its current direction.
+- A second ball ricochets backward at a small angle toward the opposite side.
+- Each ball receives 40% of the incoming ball's momentum, plus a small fixed push from the robot's explosion. Because the balls have equal mass, the code can use speed as its momentum measurement. The horizontal part is stronger than the vertical part, reducing immediate up-and-down traps.
+- The robot flashes apart, loses several tentacles and pieces, spins under gravity, and crashes against the bottom of the court.
+- Both balls use the same spin, wall, paddle, trail, and scoring rules.
+- Losing one ball does not reset the remaining ball.
+- The next rally begins only after every active ball has left the court.
+
+Each multiball keeps its own recovery timer. If either ball loses nearly all of its horizontal speed for more than a moment, that ball starts dribbling along the bottom, changes to small hops toward the player who hit it last, and waits for their paddle to collect it. The other ball can keep playing during the entire recovery.
+
+Wall impacts still remove energy. A normal one-ball rally keeps 99.5% of its speed after a top or bottom wall bounce. While two balls are active, each keeps 98.5%, making the extra explosion energy drain noticeably faster. Paddle hits can still add energy again.
+
+Momentum and kinetic energy are different. The two balls carry part of the original momentum, while the crashing robot and debris carry the rest. Some mechanical energy becomes robot motion, deformation, sound, and heat, so the two new balls should contain less kinetic energy than the incoming ball plus the explosion supplied.
+
 ## Spin
 
 The ball now has spin, kind of like a tennis ball.
@@ -177,10 +214,10 @@ Paddle hits use a "brush" idea:
 
 Wall hits use spin too. The code checks how fast the part of the ball touching the wall is sliding. During impact, the wall tries to make that contact patch stick for a moment. Squishiness controls how hard it tries to stick, and friction caps how much sideways impulse the wall can actually apply. That sideways friction creates torque, which adds clockwise or counter-clockwise spin. The top and bottom of the ball move opposite ways, so they create opposite spin.
 
-The important spin variables are:
+The important spin values are:
 
-- `ball_spin`: how fast the ball is spinning.
-- `ball_rotation`: how the ball looks on screen.
+- `ball_state.spin`: how fast one ball is spinning.
+- `ball_state.visual_rotation`: how that ball looks on screen.
 - `SPIN_CURVE_FORCE`: how much spin bends the flight path.
 - `PADDLE_BRUSH_TO_SPIN`: how much paddle brushing changes spin.
 - `PADDLE_BRUSH_TO_ANGLE`: how much paddle brushing changes the bounce angle.
@@ -203,7 +240,7 @@ The wobble is small on purpose. It makes the game exciting, but players can stil
 
 Look for:
 
-- `circle_hits_rect()`
+- `circle_paddle_contact()`
 - `ROUND_BALL_EDGE_LIFT`
 - `CONTROLLED_BOUNCE_WOBBLE`
 
@@ -211,14 +248,17 @@ Look for:
 
 The sounds are made by code, not by sound files.
 
-The game creates tiny beep sounds for:
+The game creates sounds for:
 
 - Paddle hit
 - Wall hit
 - Score
 - Win
+- Slam
+- Robot-octopus flight
+- Robot-octopus impact
 
-Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
+Look for `create_sound_players()`, `make_tone()`, and the other `make_...()` sound functions in `scripts/main.gd`.
 
 ## Good Things To Try Changing
 
@@ -238,5 +278,13 @@ Look for `create_sound_players()` and `make_tone()` in `scripts/main.gd`.
 - Change `WALL_FRICTION_TO_SPIN` to make wall friction create more or less visible rotation.
 - Change `MAX_SPIN` to make the ball spin faster or slower.
 - Change `CONTROLLED_BOUNCE_WOBBLE` to make bounces more or less surprising.
+- Change `ALIEN_MIN_DELAY` and `ALIEN_MAX_DELAY` to change how often aliens appear.
+- Change `ALIEN_SPEED` to make the robot octopus roam faster or slower.
+- Change `ALIEN_ROAM_SECONDS` to change how long it bounces around.
+- Change `ALIEN_WOBBLE_TURN_RATE` to adjust its side-to-side wandering.
+- Change `ALIEN_STEER_RADIUS` and `ALIEN_STEER_RATE` to adjust how gently it follows a nearby ball.
+- Change `ALIEN_MOMENTUM_SHARE`, `ALIEN_EXPLOSION_SPEED_BOOST`, and `ALIEN_EXPLOSION_HORIZONTAL_SHARE` to tune the split launch.
+- Change `MIN_MULTIBALL_RALLY_SPEED` to decide when the slower split balls begin recovery.
+- Change `MULTIBALL_WALL_SPEED_RETENTION` to tune how quickly wall impacts drain multiball energy.
 - Change `WINNING_SCORE` to decide how many points wins the game.
 - Change the colors in `create_game_objects()`.
