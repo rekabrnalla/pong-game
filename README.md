@@ -1,4 +1,4 @@
-# Pong Game
+# Spin Pong
 
 This is a tiny Godot 4 project for learning how Pong works.
 
@@ -31,6 +31,7 @@ Note: GitHub README files do not render iframe embeds, so the playable link abov
 - Right paddle: **Up Arrow** and **Down Arrow**
 - Mobile left paddle: drag, tap, or double-tap on the left half of the screen
 - Mobile right paddle: drag, tap, or double-tap on the right half of the screen
+- Mobile slam: tap two fingers together on your half of the screen
 - Left sprint: double-tap **W** or **S**
 - Right sprint: double-tap **Up Arrow** or **Down Arrow**
 - Left slam or held-ball serve: press **W** and **S** together
@@ -64,8 +65,17 @@ The script answers:
 - `scripts/ball_state_data.gd`: the values owned by one ball.
 - `scripts/spinning_ball.gd`: procedural ball drawing.
 - `scripts/robot_octopus.gd`: procedural alien drawing and tentacle animation.
+- `scripts/startup_splash.gd`: animated opening title, robot, and incoming ball.
 
 The scripts include section headings and teaching comments. Start with `_process()` in `main.gd` to see the order of one game frame.
+
+## Opening Splash
+
+Spin Pong begins with a short animated title screen. It reuses the game's
+procedural robot octopus and spinning ball, then automatically starts the match
+after five seconds. The scene moves in slow motion: the ball reaches only the
+halfway point while its long yellow trail suggests the speed of the full-power
+shot. A click, tap, key, or controller button can continue early.
 
 ## How To Share With Friends
 
@@ -157,6 +167,7 @@ The same web game can work on a phone or tablet.
 - Drag on the right half of the screen to move the right paddle.
 - Tap your side of the screen to send your paddle toward that spot at normal speed.
 - Double-tap your side to sprint toward that spot.
+- Tap two fingers together on your side to slam.
 
 The keyboard controls still work on computer.
 
@@ -291,3 +302,11 @@ Look for `create_sound_players()`, `make_tone()`, and the other `make_...()` sou
 - Change `MULTIBALL_WALL_SPEED_RETENTION` to tune how quickly wall impacts drain multiball energy.
 - Change `WINNING_SCORE` to decide how many points wins the game.
 - Change the colors in `create_game_objects()`.
+
+## License
+
+Spin Pong is released under the [MIT License](LICENSE). Copyright (c) 2026 Allan Baker.
+
+This game uses the [Godot Engine](https://godotengine.org/license), which is also
+available under the MIT License. Exported Godot builds include additional
+third-party components described in Godot's license notices.

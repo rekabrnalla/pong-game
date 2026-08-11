@@ -25,5 +25,6 @@ var held_offset_y := 0.0
 var trail: Array[Vector2] = []
 
 
+## Connects this bundle of physics values to the ball node it describes.
 func _init(ball_node: Node2D) -> void:
 	node = ball_node

@@ -8,6 +8,7 @@ extends Node2D
 const RADIUS := 17.0
 
 
+## Draws the yellow ball and crisp black marks that make rotation visible.
 func _draw() -> void:
 	var yellow := Color(1.0, 0.94, 0.16)
 	var black := Color(0.035, 0.04, 0.035)

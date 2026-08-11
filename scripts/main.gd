@@ -4,6 +4,7 @@ extends Node2D
 const BallStateData := preload("res://scripts/ball_state_data.gd")
 const SpinningBall := preload("res://scripts/spinning_ball.gd")
 const RobotOctopus := preload("res://scripts/robot_octopus.gd")
+const StartupSplash := preload("res://scripts/startup_splash.gd")
 
 # --- Court and paddle tuning -------------------------------------------------
 # Named constants are the game's control knobs. A learner can change one value
@@ -73,6 +74,7 @@ const SPRINT_SECONDS := 2.0
 const SPRINT_COOLDOWN_SECONDS := 5.0
 const TOUCH_TAP_MAX_SECONDS := 0.22
 const TOUCH_TAP_MOVE_MAX_DISTANCE := 24.0
+const TOUCH_TWO_FINGER_SLAM_WINDOW := 0.30
 const TOUCH_PADDLE_GRAB_PADDING := 70.0
 const TAP_TARGET_STOP_DISTANCE := 3.0
 const MOTION_BLUR_POINTS := 12
@@ -185,17 +187,29 @@ var win_sound: AudioStreamPlayer
 var slam_sound: AudioStreamPlayer
 var alien_sound: AudioStreamPlayer
 var alien_hit_sound: AudioStreamPlayer
+var startup_splash_active := true
+var startup_splash_layer: CanvasLayer
+var startup_splash: StartupSplash
 
 
 # --- Main game loop ----------------------------------------------------------
 
+## Creates the match objects and prepares the first rally when the scene starts.
 func _ready() -> void:
 	# _ready runs once after Godot has placed this scene in the game tree.
 	create_game_objects()
 	reset_round()
+	create_startup_splash()
 
 
+## Runs one frame of input, movement, collision, animation, and drawing updates.
 func _process(delta: float) -> void:
+	# The splash animates itself, while this early return freezes the match behind
+	# it. The first serve therefore begins from exactly the same state for everyone.
+	if startup_splash_active:
+		queue_redraw()
+		return
+
 	if Input.is_key_pressed(KEY_R):
 		new_game()
 
@@ -222,9 +236,17 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Routes individual taps and drags before the frame-based keyboard checks run.
 func _input(event: InputEvent) -> void:
 	# Event input is best for taps and drags because it preserves which finger
 	# moved. Held keyboard keys are checked every frame in move_paddles().
+	if startup_splash_active:
+		if event is InputEventScreenTouch and event.pressed:
+			touch_controls_seen = true
+		if startup_splash.try_skip(event):
+			get_viewport().set_input_as_handled()
+		return
+
 	if restart_confirm_open or game_over:
 		return
 
@@ -237,6 +259,7 @@ func _input(event: InputEvent) -> void:
 
 # --- Procedural court drawing ------------------------------------------------
 
+## Paints the court and motion effects that do not need their own nodes.
 func _draw() -> void:
 	# _draw does not change physics. It paints the latest state calculated by
 	# _process, starting with the background and ending with the center line.
@@ -256,6 +279,7 @@ func _draw() -> void:
 		y += dash_height + gap
 
 
+## Shows temporary colored guides for active mobile touches and tap targets.
 func draw_touch_guides() -> void:
 	# The screen halves use the paddle colors to show which finger controls which
 	# player without adding permanent mobile buttons over the court.
@@ -274,6 +298,7 @@ func draw_touch_guides() -> void:
 		draw_line(Vector2(SCREEN_SIZE.x / 2.0, guide_y), Vector2(SCREEN_SIZE.x, guide_y), Color(1.0, 0.35, 0.35, 0.35), 2.0)
 
 
+## Draws a separate yellow trail behind every active ball.
 func draw_ball_motion_blurs() -> void:
 	# Each ball owns a separate trail. Otherwise ball #2 would connect its blur
 	# to ball #1, drawing a confusing yellow streak across the court.
@@ -288,6 +313,7 @@ func draw_ball_motion_blurs() -> void:
 			draw_circle(ball_state.trail[i], radius, Color(1.0, 0.94, 0.16, alpha))
 
 
+## Draws older paddle positions with transparency based on paddle speed.
 func draw_paddle_motion_blur(paddle_trail: Array[Vector2], color: Color, paddle_velocity: float) -> void:
 	var speed_alpha: float = clamp(abs(paddle_velocity) / (PADDLE_SPEED * SPRINT_MULTIPLIER), 0.0, 1.0)
 	for i in range(paddle_trail.size()):
@@ -296,6 +322,7 @@ func draw_paddle_motion_blur(paddle_trail: Array[Vector2], color: Color, paddle_
 		draw_paddle_shape(paddle_trail[i], Color(color.r, color.g, color.b, alpha))
 
 
+## Draws one rounded paddle silhouette for its motion trail.
 func draw_paddle_shape(draw_position: Vector2, color: Color) -> void:
 	var radius := PADDLE_SIZE.x / 2.0
 	draw_rect(
@@ -307,6 +334,7 @@ func draw_paddle_shape(draw_position: Vector2, color: Color) -> void:
 	draw_circle(draw_position + Vector2(radius, PADDLE_SIZE.y - radius), radius, color)
 
 
+## Draws the gold alien timer shrinking inward from both ends.
 func draw_alien_countdown_fuse() -> void:
 	# The full line is the original random wait. As time runs out, both outside
 	# ends move toward the center. Their meeting point is the alien's spawn time.
@@ -331,6 +359,7 @@ func draw_alien_countdown_fuse() -> void:
 		draw_circle(right_end, ALIEN_FUSE_THICKNESS * 0.65, live_gold)
 
 
+## Converts the alien's remaining wait into half of the visible fuse width.
 func alien_fuse_remaining_half_width() -> float:
 	if alien_countdown_start <= 0.0:
 		return 0.0
@@ -340,6 +369,30 @@ func alien_fuse_remaining_half_width() -> float:
 
 # --- Scene objects, interface, and generated sounds -------------------------
 
+## Places the animated opening screen on a layer above the entire match.
+func create_startup_splash() -> void:
+	# A CanvasLayer keeps the opening title above every court object and popup.
+	# The game loop checks startup_splash_active to pause physics until this layer
+	# emits its finished signal.
+	startup_splash_layer = CanvasLayer.new()
+	startup_splash_layer.name = "StartupSplashLayer"
+	startup_splash_layer.layer = 20
+	add_child(startup_splash_layer)
+
+	startup_splash = StartupSplash.new()
+	startup_splash.name = "StartupSplash"
+	startup_splash.finished.connect(_on_startup_splash_finished)
+	startup_splash_layer.add_child(startup_splash)
+
+
+## Removes the finished splash and lets normal gameplay begin.
+func _on_startup_splash_finished() -> void:
+	startup_splash_active = false
+	startup_splash_layer.queue_free()
+	update_help_text()
+
+
+## Creates paddles, labels, layers, sounds, and popups used by every round.
 func create_game_objects() -> void:
 	# Most objects are made in code so a learner can see how a scene can be built
 	# from nodes. The popup uses a CanvasLayer so it always appears above play.
@@ -378,6 +431,7 @@ func create_game_objects() -> void:
 	create_popup()
 
 
+## Builds the shared restart and game-over popup interface.
 func create_popup() -> void:
 	popup_layer = CanvasLayer.new()
 	popup_layer.layer = 10
@@ -426,6 +480,7 @@ func create_popup() -> void:
 	popup_layer.visible = false
 
 
+## Creates one rounded visual paddle with the requested name and color.
 func make_paddle(node_name: String, color: Color) -> Panel:
 	# A StyleBoxFlat supplies rounded corners. Its matching physics shape is a
 	# capsule, calculated later by circle_paddle_contact().
@@ -446,6 +501,7 @@ func make_paddle(node_name: String, color: Color) -> Panel:
 	return paddle
 
 
+## Creates all generated sound effects and the players that will play them.
 func create_sound_players() -> void:
 	# These simple sounds are arrays of speaker positions calculated in code.
 	# Frequency means how many times a wave repeats in one second.
@@ -469,6 +525,7 @@ func create_sound_players() -> void:
 	add_child(alien_hit_sound)
 
 
+## Wraps a simple generated tone in a ready-to-use audio player.
 func make_sound_player(node_name: String, frequency: float, seconds: float, volume: float) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
 	player.name = node_name
@@ -477,6 +534,7 @@ func make_sound_player(node_name: String, frequency: float, seconds: float, volu
 	return player
 
 
+## Converts a sine-wave formula into a short playable sound stored in memory.
 func make_tone(frequency: float, seconds: float, volume: float) -> AudioStreamWAV:
 	var sample_rate := 22050
 	var sample_count := int(sample_rate * seconds)
@@ -498,6 +556,7 @@ func make_tone(frequency: float, seconds: float, volume: float) -> AudioStreamWA
 	return tone
 
 
+## Builds the low layered boom used for a paddle slam.
 func make_slam_boom() -> AudioStreamWAV:
 	var sample_rate := 22050
 	var seconds := 0.58
@@ -525,6 +584,7 @@ func make_slam_boom() -> AudioStreamWAV:
 	return boom
 
 
+## Builds the looping arcade doodle heard while the robot flies.
 func make_alien_doodle() -> AudioStreamWAV:
 	var sample_rate := 22050
 	var seconds := 1.20
@@ -555,6 +615,7 @@ func make_alien_doodle() -> AudioStreamWAV:
 	return doodle
 
 
+## Builds the descending electronic zap heard when the robot is struck.
 func make_alien_hit_zap() -> AudioStreamWAV:
 	var sample_rate := 22050
 	var seconds := 0.24
@@ -580,6 +641,7 @@ func make_alien_hit_zap() -> AudioStreamWAV:
 	return zap
 
 
+## Restarts a sound player so rapid events still produce an immediate effect.
 func play_sound(player: AudioStreamPlayer) -> void:
 	player.stop()
 	player.play()
@@ -587,6 +649,7 @@ func play_sound(player: AudioStreamPlayer) -> void:
 
 # --- Robot octopus timing, movement, and multiball --------------------------
 
+## Chooses a fresh random wait before the next eligible alien visit.
 func roll_next_alien_delay() -> void:
 	# The random roll is a countdown in seconds. Keeping a minimum prevents two
 	# aliens from appearing almost on top of each other.
@@ -594,6 +657,7 @@ func roll_next_alien_delay() -> void:
 	alien_countdown_start = alien_countdown
 
 
+## Checks that exactly one normal ball is active before allowing an alien spawn.
 func alien_spawn_is_eligible() -> bool:
 	return (
 		alien == null
@@ -602,6 +666,7 @@ func alien_spawn_is_eligible() -> bool:
 	)
 
 
+## Advances the alien timer or moves the existing alien for one frame.
 func update_alien(delta: float) -> void:
 	if alien != null:
 		move_roaming_alien(delta)
@@ -617,6 +682,7 @@ func update_alien(delta: float) -> void:
 		spawn_alien()
 
 
+## Creates a robot in the fair center zone and gives it an initial direction.
 func spawn_alien() -> void:
 	# The alien begins just inside the top edge. A random sideways component keeps
 	# its first trip across the court from looking identical every time.
@@ -636,6 +702,7 @@ func spawn_alien() -> void:
 	alien_sound.play()
 
 
+## Moves a roaming robot, adds wobble, and starts its exit when time expires.
 func move_roaming_alien(delta: float) -> void:
 	# For 20 seconds the middle third and the top/bottom edges act like bumpers.
 	# After that, the alien chooses the nearer vertical exit. Traveling straight
@@ -665,6 +732,7 @@ func move_roaming_alien(delta: float) -> void:
 	bounce_alien_off_court_edges()
 
 
+## Turns the robot slightly toward a nearby ball without making it home in sharply.
 func steer_alien_toward_ball(delta: float) -> void:
 	# Steering only happens near the one legal target ball. We aim a short way in
 	# front of the ball, like leading a moving target, but cap the turn at only 12
@@ -690,6 +758,7 @@ func steer_alien_toward_ball(delta: float) -> void:
 	alien_velocity = current_direction.rotated(turn) * ALIEN_SPEED
 
 
+## Reflects the roaming robot from the safe center-zone boundaries.
 func bounce_alien_off_court_edges() -> void:
 	# Reflecting one velocity component is the same mirror rule used by a ball:
 	# the invisible middle-third walls flip x, while top/bottom walls flip y.
@@ -711,6 +780,7 @@ func bounce_alien_off_court_edges() -> void:
 	alien_velocity = alien_velocity.normalized() * ALIEN_SPEED
 
 
+## Reports when an exiting robot has completely cleared the visible court.
 func alien_is_outside_court() -> bool:
 	return (
 		alien.position.x < -ALIEN_OFFSCREEN_MARGIN
@@ -720,6 +790,7 @@ func alien_is_outside_court() -> bool:
 	)
 
 
+## Stops alien sound and either removes the robot or begins its crash animation.
 func remove_alien(play_destroy_animation: bool, blast_direction: Vector2 = Vector2.ZERO) -> void:
 	if alien == null:
 		return
@@ -735,6 +806,7 @@ func remove_alien(play_destroy_animation: bool, blast_direction: Vector2 = Vecto
 	roll_next_alien_delay()
 
 
+## Tests one ball against the robot and starts multiball when they overlap.
 func check_alien_collision(ball_state: BallStateData) -> void:
 	if alien == null or active_balls.size() != 1:
 		return
@@ -746,6 +818,7 @@ func check_alien_collision(ball_state: BallStateData) -> void:
 	split_ball_on_alien(ball_state)
 
 
+## Divides one incoming ball into two lower-energy paths after an alien hit.
 func split_ball_on_alien(ball_state: BallStateData) -> void:
 	# A normalized vector describes direction only. The original ball keeps that
 	# direction when it already has enough x motion. A nearly vertical hit is
@@ -797,6 +870,7 @@ func split_ball_on_alien(ball_state: BallStateData) -> void:
 	reflected_ball.last_hitter_direction = ball_state.last_hitter_direction
 
 
+## Keeps a launch direction from becoming an unfair nearly vertical path.
 func direction_with_minimum_horizontal_share(
 	direction: Vector2,
 	minimum_horizontal_share: float,
@@ -823,6 +897,7 @@ func direction_with_minimum_horizontal_share(
 	).normalized()
 
 
+## Separates score clicks from court touches so one action cannot do both jobs.
 func _on_score_label_gui_input(event: InputEvent) -> void:
 	# GUI input is handled separately from court input so tapping the score cannot
 	# also move a mobile paddle.
@@ -835,6 +910,7 @@ func _on_score_label_gui_input(event: InputEvent) -> void:
 			handle_score_touch()
 
 
+## Restarts after game over or asks for confirmation during an active match.
 func handle_score_click() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - last_score_click_time < 0.15:
@@ -849,6 +925,7 @@ func handle_score_click() -> void:
 		show_restart_confirm()
 
 
+## Marks the device as touch-controlled and forwards the score tap safely.
 func handle_score_touch() -> void:
 	touch_controls_seen = true
 	# Phones may also synthesize a mouse click from this touch. handle_score_click
@@ -856,16 +933,19 @@ func handle_score_touch() -> void:
 	handle_score_click()
 
 
+## Opens a confirmation popup before erasing an in-progress score.
 func show_restart_confirm() -> void:
 	restart_confirm_open = true
 	show_popup("Are you sure?", "Restart this game and reset both scores?", true)
 
 
+## Shows the winner while leaving score-click restart behavior available.
 func show_game_over_popup(winner: String) -> void:
 	restart_confirm_open = false
 	show_popup(winner + " Player Wins!", "Click the score to restart.", false)
 
 
+## Fills and displays the shared popup in confirmation or information mode.
 func show_popup(title: String, message: String, show_buttons: bool) -> void:
 	popup_title_label.text = title
 	popup_message_label.text = message
@@ -878,21 +958,25 @@ func show_popup(title: String, message: String, show_buttons: bool) -> void:
 	popup_layer.visible = true
 
 
+## Closes the popup and returns input to the court.
 func hide_popup() -> void:
 	restart_confirm_open = false
 	popup_layer.visible = false
 
 
+## Starts a fresh match when the popup's Restart button is pressed.
 func _on_popup_restart_pressed() -> void:
 	new_game()
 
 
+## Closes restart confirmation when the player chooses to keep playing.
 func _on_popup_cancel_pressed() -> void:
 	hide_popup()
 
 
 # --- Mobile touch input ------------------------------------------------------
 
+## Begins or ends a paddle touch, including the two-finger mobile slam gesture.
 func handle_touch_press(event: InputEventScreenTouch) -> void:
 	# A touch beginning near a paddle grabs it directly. A distant tap creates a
 	# destination instead, preventing the paddle from teleporting across court.
@@ -903,13 +987,18 @@ func handle_touch_press(event: InputEventScreenTouch) -> void:
 
 	var is_left_side := touch_position.x < SCREEN_SIZE.x / 2.0
 	var touch_player_direction := -1.0 if is_left_side else 1.0
+	var now := Time.get_ticks_msec() / 1000.0
+
+	# The first finger already owns this side. A second quick, steady finger press
+	# means slam; any other extra finger is consumed so it cannot steal the paddle.
+	if event.pressed and try_start_two_finger_slam(is_left_side, now):
+		return
+
 	if event.pressed:
 		var held_ball := get_held_ball(touch_player_direction)
 		if held_ball != null:
 			serve_held_ball(held_ball)
 			return
-
-	var now := Time.get_ticks_msec() / 1000.0
 
 	if event.pressed:
 		if is_left_side:
@@ -948,6 +1037,44 @@ func handle_touch_press(event: InputEventScreenTouch) -> void:
 			right_touch_direct_mode = false
 
 
+## Recognizes two nearly simultaneous fingers on one side and starts its slam.
+func try_start_two_finger_slam(is_left_side: bool, now: float) -> bool:
+	var first_touch_active: bool = left_touch_active if is_left_side else right_touch_active
+	if not first_touch_active:
+		return false
+
+	var first_touch_time: float = left_touch_press_time if is_left_side else right_touch_press_time
+	var first_touch_start_y: float = left_touch_start_position.y if is_left_side else right_touch_start_position.y
+	var first_touch_current_y: float = left_touch_target_y if is_left_side else right_touch_target_y
+	var arrived_together: bool = now - first_touch_time <= TOUCH_TWO_FINGER_SLAM_WINDOW
+	var first_finger_stayed_still: bool = abs(first_touch_current_y - first_touch_start_y) <= TOUCH_TAP_MOVE_MAX_DISTANCE
+
+	if arrived_together and first_finger_stayed_still:
+		cancel_touch_for_slam(is_left_side)
+		handle_both_keys_pressed(-1.0 if is_left_side else 1.0)
+
+	# Returning true also consumes a late second finger. The original drag remains
+	# in charge unless a valid slam deliberately clears it above.
+	return true
+
+
+## Clears a player's ordinary touch movement so slam does not also become a tap.
+func cancel_touch_for_slam(is_left_side: bool) -> void:
+	if is_left_side:
+		left_touch_active = false
+		left_touch_index = -1
+		left_touch_can_drag = false
+		left_touch_direct_mode = false
+		left_tap_move_active = false
+	else:
+		right_touch_active = false
+		right_touch_index = -1
+		right_touch_can_drag = false
+		right_touch_direct_mode = false
+		right_tap_move_active = false
+
+
+## Updates the matching paddle target while a finger moves across the screen.
 func handle_touch_drag(event: InputEventScreenDrag) -> void:
 	touch_controls_seen = true
 	if event.index == left_touch_index:
@@ -969,6 +1096,7 @@ func handle_touch_drag(event: InputEventScreenDrag) -> void:
 			right_tap_move_active = true
 
 
+## Turns a short left-side touch into a move target and possible sprint tap.
 func finish_left_touch(touch_position: Vector2, now: float) -> void:
 	if is_quick_tap(touch_position, left_touch_start_position, now - left_touch_press_time) and not left_touch_direct_mode:
 		check_left_sprint_tap(now)
@@ -976,6 +1104,7 @@ func finish_left_touch(touch_position: Vector2, now: float) -> void:
 		left_tap_move_active = true
 
 
+## Turns a short right-side touch into a move target and possible sprint tap.
 func finish_right_touch(touch_position: Vector2, now: float) -> void:
 	if is_quick_tap(touch_position, right_touch_start_position, now - right_touch_press_time) and not right_touch_direct_mode:
 		check_right_sprint_tap(now)
@@ -983,10 +1112,12 @@ func finish_right_touch(touch_position: Vector2, now: float) -> void:
 		right_tap_move_active = true
 
 
+## Distinguishes a quick steady tap from a longer hold or deliberate drag.
 func is_quick_tap(touch_position: Vector2, start_position: Vector2, press_seconds: float) -> bool:
 	return press_seconds <= TOUCH_TAP_MAX_SECONDS and touch_position.distance_to(start_position) <= TOUCH_TAP_MOVE_MAX_DISTANCE
 
 
+## Checks whether a new finger is close enough to grab a paddle directly.
 func touch_starts_near_paddle(touch_position: Vector2, paddle: Panel) -> bool:
 	var grab_zone := Rect2(
 		Vector2(paddle.position.x - TOUCH_PADDLE_GRAB_PADDING, paddle.position.y - TOUCH_PADDLE_GRAB_PADDING),
@@ -997,6 +1128,7 @@ func touch_starts_near_paddle(touch_position: Vector2, paddle: Panel) -> bool:
 
 # --- Paddle movement, sprint, and slam --------------------------------------
 
+## Moves both paddles from touch or keyboard input and records their velocities.
 func move_paddles(delta: float) -> void:
 	# delta is the fraction of a second since the previous frame. Multiplying
 	# pixels-per-second by delta keeps movement similar on fast and slow devices.
@@ -1059,6 +1191,7 @@ func move_paddles(delta: float) -> void:
 	save_paddle_trail_point(right_paddle_trail, right_old_position, right_paddle.position)
 
 
+## Makes a grabbed mobile paddle follow its finger without losing the grab offset.
 func move_paddle_direct_to_touch(paddle: Panel, target_y: float, grab_offset_y: float, delta: float, is_left_paddle: bool) -> void:
 	var old_y := paddle.position.y
 	var new_y: float = clamp(target_y - grab_offset_y, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
@@ -1072,6 +1205,7 @@ func move_paddle_direct_to_touch(paddle: Panel, target_y: float, grab_offset_y: 
 			right_paddle_velocity = touch_velocity
 
 
+## Moves a tapped paddle toward its destination at a controlled speed.
 func move_paddle_toward_target(paddle: Panel, target_y: float, speed: float, delta: float, is_left_paddle: bool) -> bool:
 	var old_y := paddle.position.y
 	var target_top: float = clamp(target_y - PADDLE_SIZE.y / 2.0, 0.0, SCREEN_SIZE.y - PADDLE_SIZE.y)
@@ -1094,6 +1228,7 @@ func move_paddle_toward_target(paddle: Panel, target_y: float, speed: float, del
 	return abs(target_top - new_y) > TAP_TARGET_STOP_DISTANCE
 
 
+## Detects two-key slam presses and counts down their animation timers.
 func update_slam_controls(delta: float) -> void:
 	# Pressing opposite movement keys is treated as one special command. An edge
 	# check (was down versus is down) prevents a held pair from slamming every frame.
@@ -1122,6 +1257,7 @@ func update_slam_controls(delta: float) -> void:
 	right_both_was_down = right_both_down
 
 
+## Chooses whether a two-key press serves a held ball or starts a slam.
 func handle_both_keys_pressed(player_direction: float) -> void:
 	var held_ball := get_held_ball(player_direction)
 	if held_ball != null:
@@ -1139,6 +1275,7 @@ func handle_both_keys_pressed(player_direction: float) -> void:
 		right_slam_shudder_left = 0.0
 
 
+## Finds the ball currently attached to the requested player's paddle.
 func get_held_ball(player_direction: float) -> BallStateData:
 	for ball_state in active_balls:
 		if ball_state.mode == BallMode.HELD and ball_state.held_by_direction == player_direction:
@@ -1146,6 +1283,7 @@ func get_held_ball(player_direction: float) -> BallStateData:
 	return null
 
 
+## Reports whether any ball is still flying in normal rally mode.
 func has_normally_playing_ball() -> bool:
 	for ball_state in active_balls:
 		if ball_state.mode == BallMode.PLAYING:
@@ -1153,11 +1291,13 @@ func has_normally_playing_ball() -> bool:
 	return false
 
 
+## Applies the current lunge or shudder offset to both paddle x positions.
 func update_paddle_slam_positions() -> void:
 	left_paddle.position.x = LEFT_PADDLE_X + slam_visual_offset(left_slam_time_left, left_slam_shudder_left)
 	right_paddle.position.x = RIGHT_PADDLE_X - slam_visual_offset(right_slam_time_left, right_slam_shudder_left)
 
 
+## Calculates a paddle's forward lunge and fading after-hit vibration.
 func slam_visual_offset(lunge_time_left: float, shudder_time_left: float) -> float:
 	# The first sine wave makes one smooth forward-and-back lunge. The faster,
 	# fading sine wave produces the smaller shudder after impact.
@@ -1173,6 +1313,7 @@ func slam_visual_offset(lunge_time_left: float, shudder_time_left: float) -> flo
 	return 0.0
 
 
+## Counts down active sprint time and cooldown time for both players.
 func update_sprint_timers(delta: float) -> void:
 	# Sprint and cooldown are countdown clocks. max(..., 0) prevents a timer from
 	# becoming negative and makes exact zero checks reliable.
@@ -1191,6 +1332,7 @@ func update_sprint_timers(delta: float) -> void:
 		right_sprint_cooldown_left = SPRINT_COOLDOWN_SECONDS
 
 
+## Watches keyboard direction-key edges for double taps that begin a sprint.
 func check_sprint_taps() -> void:
 	# A double tap is two new key presses inside DOUBLE_TAP_WINDOW. We ignore a
 	# simultaneous up+down press here because that combination belongs to slam.
@@ -1218,6 +1360,7 @@ func check_sprint_taps() -> void:
 	right_down_was_down = right_down_is_down
 
 
+## Compares a left player's new tap with the previous tap time.
 func check_left_sprint_tap(now: float) -> void:
 	if left_sprint_cooldown_left == 0.0 and left_sprint_time_left == 0.0:
 		if now - left_last_sprint_tap_time <= DOUBLE_TAP_WINDOW:
@@ -1226,6 +1369,7 @@ func check_left_sprint_tap(now: float) -> void:
 	left_last_sprint_tap_time = now
 
 
+## Compares a right player's new tap with the previous tap time.
 func check_right_sprint_tap(now: float) -> void:
 	if right_sprint_cooldown_left == 0.0 and right_sprint_time_left == 0.0:
 		if now - right_last_sprint_tap_time <= DOUBLE_TAP_WINDOW:
@@ -1234,11 +1378,13 @@ func check_right_sprint_tap(now: float) -> void:
 	right_last_sprint_tap_time = now
 
 
+## Activates the left sprint when its cooldown has finished.
 func start_left_sprint() -> void:
 	left_sprint_time_left = SPRINT_SECONDS
 	left_last_sprint_tap_time = -10.0
 
 
+## Activates the right sprint when its cooldown has finished.
 func start_right_sprint() -> void:
 	right_sprint_time_left = SPRINT_SECONDS
 	right_last_sprint_tap_time = -10.0
@@ -1246,6 +1392,7 @@ func start_right_sprint() -> void:
 
 # --- Per-ball movement and recovery states ---------------------------------
 
+## Gives every active ball its own movement and collision update for this frame.
 func move_balls(delta: float) -> void:
 	# Scoring can remove a ball while this loop is running. Iterating over a copy
 	# keeps the original collection safe while balls enter or leave the match.
@@ -1258,6 +1405,7 @@ func move_balls(delta: float) -> void:
 			return
 
 
+## Sends one ball to the movement rules for its current state.
 func move_ball(ball_state: BallStateData, delta: float) -> void:
 	match ball_state.mode:
 		BallMode.PLAYING:
@@ -1270,6 +1418,7 @@ func move_ball(ball_state: BallStateData, delta: float) -> void:
 			update_held_ball_position(ball_state)
 
 
+## Moves a rally ball in small steps so fast collisions are not skipped.
 func move_playing_ball(ball_state: BallStateData, delta: float) -> void:
 	save_ball_trail_point(ball_state)
 
@@ -1316,6 +1465,7 @@ func move_playing_ball(ball_state: BallStateData, delta: float) -> void:
 			return
 
 
+## Lets a stalled ball bounce lower and lower until it returns to its server.
 func move_dribbling_ball(ball_state: BallStateData, delta: float) -> void:
 	save_ball_trail_point(ball_state)
 	var radius := BALL_SIZE.x / 2.0
@@ -1349,6 +1499,7 @@ func move_dribbling_ball(ball_state: BallStateData, delta: float) -> void:
 		ball_state.velocity.x = -abs(ball_state.velocity.x) * 0.25
 
 
+## Bounces a recovered ball gently toward the player who last struck it.
 func move_bouncing_ball_to_server(ball_state: BallStateData, delta: float) -> void:
 	save_ball_trail_point(ball_state)
 	var radius := BALL_SIZE.x / 2.0
@@ -1381,6 +1532,7 @@ func move_bouncing_ball_to_server(ball_state: BallStateData, delta: float) -> vo
 	try_collect_returning_ball(ball_state, server_paddle)
 
 
+## Changes a vertically trapped ball from normal play into energy-losing dribbles.
 func begin_dribbling(ball_state: BallStateData) -> void:
 	ball_state.mode = BallMode.DRIBBLING
 	if is_zero_approx(ball_state.last_hitter_direction):
@@ -1392,6 +1544,7 @@ func begin_dribbling(ball_state: BallStateData) -> void:
 	ball_state.sideways_stall_time = 0.0
 
 
+## Gives a finished dribble a small arcing velocity toward its server.
 func begin_bouncing_to_server(ball_state: BallStateData) -> void:
 	ball_state.mode = BallMode.BOUNCING_BACK
 	ball_state.node.position.y = SCREEN_SIZE.y - BALL_SIZE.y / 2.0
@@ -1405,12 +1558,14 @@ func begin_bouncing_to_server(ball_state: BallStateData) -> void:
 	ball_state.trail.clear()
 
 
+## Returns the paddle belonging to the player who last hit this ball.
 func get_server_paddle(ball_state: BallStateData) -> Panel:
 	if ball_state.last_hitter_direction < 0.0:
 		return left_paddle
 	return right_paddle
 
 
+## Attaches a returning ball when it reaches the correct paddle.
 func try_collect_returning_ball(ball_state: BallStateData, server_paddle: Panel) -> bool:
 	var away_direction := -ball_state.last_hitter_direction
 	var contact := circle_paddle_contact(ball_state.node.position, BALL_SIZE.x / 2.0, server_paddle, away_direction)
@@ -1434,6 +1589,7 @@ func try_collect_returning_ball(ball_state: BallStateData, server_paddle: Panel)
 	return true
 
 
+## Keeps a collected ball attached to the moving server paddle.
 func update_held_ball_position(ball_state: BallStateData) -> void:
 	var server_paddle := get_server_paddle(ball_state)
 	var radius := BALL_SIZE.x / 2.0
@@ -1449,6 +1605,7 @@ func update_held_ball_position(ball_state: BallStateData) -> void:
 	)
 
 
+## Releases a held ball with angle, speed, and spin from current paddle motion.
 func serve_held_ball(ball_state: BallStateData) -> void:
 	if ball_state.mode != BallMode.HELD:
 		return
@@ -1482,12 +1639,14 @@ func serve_held_ball(ball_state: BallStateData) -> void:
 	play_sound(paddle_sound)
 
 
+## Remembers one older ball position and limits the trail's length.
 func save_ball_trail_point(ball_state: BallStateData) -> void:
 	ball_state.trail.push_front(ball_state.node.position)
 	if ball_state.trail.size() > MOTION_BLUR_POINTS:
 		ball_state.trail.pop_back()
 
 
+## Records a paddle position only when movement is large enough to see.
 func save_paddle_trail_point(paddle_trail: Array[Vector2], old_position: Vector2, new_position: Vector2) -> void:
 	if old_position.distance_squared_to(new_position) <= 0.25:
 		paddle_trail.clear()
@@ -1498,11 +1657,13 @@ func save_paddle_trail_point(paddle_trail: Array[Vector2], old_position: Vector2
 		paddle_trail.pop_back()
 
 
+## Updates visual rotation and spin decay for every ball.
 func spin_balls(delta: float) -> void:
 	for ball_state in active_balls:
 		spin_ball(ball_state, delta)
 
 
+## Curves one ball from spin and rotates its visible markings.
 func spin_ball(ball_state: BallStateData, delta: float) -> void:
 	if ball_state.mode == BallMode.BOUNCING_BACK:
 		ball_state.visual_rotation += ball_state.velocity.x / (BALL_SIZE.x / 2.0) * delta
@@ -1517,6 +1678,7 @@ func spin_ball(ball_state: BallStateData, delta: float) -> void:
 	ball_state.node.rotation = ball_state.visual_rotation
 
 
+## Exchanges wall-contact sliding with spin, angle, and a little lost energy.
 func bounce_from_wall(ball_state: BallStateData, wall_side: float) -> void:
 	var old_x_speed := ball_state.velocity.x
 	var old_y_speed := ball_state.velocity.y
@@ -1540,6 +1702,7 @@ func bounce_from_wall(ball_state: BallStateData, wall_side: float) -> void:
 	ball_state.spin = clamp(ball_state.spin * WALL_SPIN_LOSS + -wall_side * friction_impulse * WALL_FRICTION_TO_SPIN, -MAX_SPIN, MAX_SPIN)
 
 
+## Detects when a ball has lacked useful sideways motion for too long.
 func ball_should_start_dribbling(ball_state: BallStateData, delta: float) -> bool:
 	# Split balls begin with 40% momentum plus the explosion kick. Their lower
 	# threshold gives that smaller amount time to play out before recovery begins.
@@ -1557,6 +1720,7 @@ func ball_should_start_dribbling(ball_state: BallStateData, delta: float) -> boo
 	return ball_state.sideways_stall_time >= SIDEWAYS_STALL_SECONDS
 
 
+## Tests one ball against the alien and both rounded paddles.
 func check_ball_collisions(ball_state: BallStateData) -> void:
 	var left_center_x := left_paddle.position.x + PADDLE_SIZE.x / 2.0
 	var right_center_x := right_paddle.position.x + PADDLE_SIZE.x / 2.0
@@ -1573,6 +1737,7 @@ func check_ball_collisions(ball_state: BallStateData) -> void:
 			bounce_from_paddle(ball_state, right_paddle, right_paddle_velocity, -1.0, right_contact)
 
 
+## Finds the nearest point and surface normal on a capsule-shaped paddle.
 func circle_paddle_contact(circle_center: Vector2, ball_radius: float, paddle: Panel, x_direction: float) -> Dictionary:
 	# A vertical capsule is a line segment with a circle swept along it. Finding
 	# the closest point on that segment gives flat-side, round-end, and diagonal
@@ -1602,6 +1767,7 @@ func circle_paddle_contact(circle_center: Vector2, ball_radius: float, paddle: P
 	}
 
 
+## Combines hit location, paddle motion, spin, and slam power into a return shot.
 func bounce_from_paddle(ball_state: BallStateData, paddle: Panel, paddle_velocity: float, x_direction: float, contact: Dictionary) -> void:
 	var contact_normal: Vector2 = contact["normal"]
 	var paddle_motion := Vector2(0.0, paddle_velocity)
@@ -1656,6 +1822,7 @@ func bounce_from_paddle(ball_state: BallStateData, paddle: Panel, paddle_velocit
 		play_sound(paddle_sound)
 
 
+## Starts the correct paddle's shudder and plays the boom after a slam connects.
 func finish_successful_slam(x_direction: float) -> void:
 	if x_direction > 0.0:
 		left_slam_time_left = 0.0
@@ -1668,6 +1835,7 @@ func finish_successful_slam(x_direction: float) -> void:
 
 # --- Scoring, rally reset, and help text ------------------------------------
 
+## Removes an out-of-bounds ball and awards its point to the correct player.
 func score_and_remove_ball(ball_state: BallStateData, left_player_scored: bool) -> void:
 	# A multiball rally scores one ball at a time. Removing this ball does not
 	# disturb the other one; only an empty collection starts the next rally.
@@ -1691,6 +1859,7 @@ func score_and_remove_ball(ball_state: BallStateData, left_player_scored: bool) 
 		reset_round()
 
 
+## Stops active balls, announces the winner, and plays the victory sound.
 func finish_game() -> void:
 	game_over = true
 	clear_active_balls()
@@ -1702,6 +1871,7 @@ func finish_game() -> void:
 	play_sound(win_sound)
 
 
+## Creates a visible ball and the separate state object that controls its physics.
 func create_ball(start_position: Vector2, start_velocity: Vector2, start_spin: float = 0.0) -> BallStateData:
 	var ball_node: Node2D = SpinningBall.new()
 	ball_node.name = "Ball" + str(active_balls.size() + 1)
@@ -1717,6 +1887,7 @@ func create_ball(start_position: Vector2, start_velocity: Vector2, start_spin: f
 	return ball_state
 
 
+## Removes every ball node and empties the shared active-ball list.
 func clear_active_balls() -> void:
 	for ball_state in active_balls:
 		if is_instance_valid(ball_state.node):
@@ -1724,6 +1895,7 @@ func clear_active_balls() -> void:
 	active_balls.clear()
 
 
+## Centers the paddles and launches one new ball without erasing match scores.
 func reset_round() -> void:
 	# A point starts a new ball, not a new match. An alien already on the court
 	# keeps its position, sound, and 20-second timer across this rally reset.
@@ -1751,10 +1923,12 @@ func reset_round() -> void:
 	update_score_text()
 
 
+## Copies the two score numbers into the centered score label.
 func update_score_text() -> void:
 	score_label.text = str(left_score) + "     " + str(right_score)
 
 
+## Chooses instructions that match the current controls and held-ball state.
 func update_help_text() -> void:
 	var held_ball := get_any_held_ball()
 	if held_ball != null:
@@ -1767,11 +1941,12 @@ func update_help_text() -> void:
 		return
 
 	if touch_controls_seen:
-		help_label.text = "Touch: drag to follow, tap to move, double-tap to sprint"
+		help_label.text = "Touch: drag paddle  |  tap: move  |  double-tap: sprint  |  2-finger tap: SLAM"
 	else:
 		help_label.text = "W/S  " + sprint_status(left_sprint_time_left, left_sprint_cooldown_left) + "    Up/Down  " + sprint_status(right_sprint_time_left, right_sprint_cooldown_left) + "    Together: slam    R restart"
 
 
+## Finds a held ball on either paddle, or returns null when neither has one.
 func get_any_held_ball() -> BallStateData:
 	for ball_state in active_balls:
 		if ball_state.mode == BallMode.HELD:
@@ -1779,6 +1954,7 @@ func get_any_held_ball() -> BallStateData:
 	return null
 
 
+## Turns sprint timers into a short player-friendly status message.
 func sprint_status(sprint_time_left: float, cooldown_left: float) -> String:
 	if sprint_time_left > 0.0:
 		return "SPRINT " + str(snapped(sprint_time_left, 0.1)) + "s"
@@ -1789,6 +1965,7 @@ func sprint_status(sprint_time_left: float, cooldown_left: float) -> String:
 	return "double-tap to sprint"
 
 
+## Clears all sprint, key-edge, touch, and tap-target state for a fresh match.
 func reset_sprints() -> void:
 	left_last_sprint_tap_time = -10.0
 	right_last_sprint_tap_time = -10.0
@@ -1816,6 +1993,7 @@ func reset_sprints() -> void:
 	right_tap_move_active = false
 
 
+## Resets scores and temporary state, removes the alien, and begins a new match.
 func new_game() -> void:
 	left_score = 0
 	right_score = 0

@@ -22,6 +22,7 @@ var crash_velocity := Vector2.ZERO
 var crash_angular_velocity := 0.0
 
 
+## Advances the robot's wiggle clock and any active crash animation.
 func _process(delta: float) -> void:
 	animation_time += delta
 	if crashing:
@@ -30,6 +31,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Changes a normal flying robot into spinning wreckage after a ball hit.
 func start_destroy_animation(blast_direction: Vector2 = Vector2.RIGHT) -> void:
 	# The ball supplies the sideways part of the launch. The robot explosion adds
 	# an upward kick, then gravity bends the path down toward the floor.
@@ -48,6 +50,7 @@ func start_destroy_animation(blast_direction: Vector2 = Vector2.RIGHT) -> void:
 	z_index = 2
 
 
+## Applies gravity, ground bounce, and cleanup to the broken robot.
 func move_crashing_alien(delta: float) -> void:
 	crash_time += delta
 	crash_velocity.y += CRASH_GRAVITY * delta
@@ -70,6 +73,7 @@ func move_crashing_alien(delta: float) -> void:
 			queue_free()
 
 
+## Chooses between drawing the healthy robot and its damaged version.
 func _draw() -> void:
 	if crashing:
 		draw_crashing_alien()
@@ -81,6 +85,7 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 
+## Draws four jointed tentacles whose sine waves begin at different phases.
 func draw_tentacles() -> void:
 	var metal := Color(0.72, 0.82, 0.86)
 	var joint := Color(0.12, 0.16, 0.18)
@@ -101,6 +106,7 @@ func draw_tentacles() -> void:
 		draw_circle(points[2], 4.0, metal)
 
 
+## Builds the robot's dome, face, eyes, and optional antenna from simple shapes.
 func draw_robot_body(include_antenna: bool = true) -> void:
 	var outline := Color(0.025, 0.04, 0.055)
 	var mint := Color(0.30, 0.95, 0.68)
@@ -127,6 +133,7 @@ func draw_robot_body(include_antenna: bool = true) -> void:
 	draw_arc(Vector2.ZERO, 17.0, PI + 0.25, TAU - 0.25, 24, Color(0.82, 1.0, 0.94, 0.8), 2.0)
 
 
+## Draws cracks, loose pieces, blast light, and landing dust during a crash.
 func draw_crashing_alien() -> void:
 	# The dome stays recognizable while four tentacles, the antenna, and a loose
 	# eye spread away from it. Their offsets use time squared for a gravity-like
@@ -154,6 +161,7 @@ func draw_crashing_alien() -> void:
 		draw_arc(Vector2.ZERO, 34.0 + ground_crash_time * 45.0, PI, TAU, 24, Color(0.75, 0.82, 0.86, dust_alpha), 4.0)
 
 
+## Moves each detached robot part along its own small projectile path.
 func draw_blasted_parts() -> void:
 	var metal := Color(0.72, 0.82, 0.86)
 	var joint := Color(0.12, 0.16, 0.18)
