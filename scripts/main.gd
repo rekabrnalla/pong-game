@@ -80,6 +80,7 @@ const MOTION_BLUR_ALPHA := 0.22
 const MOTION_BLUR_CLEAR_DISTANCE := 22.0
 const PADDLE_MOTION_BLUR_POINTS := 8
 const PADDLE_MOTION_BLUR_ALPHA := 0.22
+const SCORE_TOUCH_SIZE := Vector2(220.0, 58.0)
 const WINNING_SCORE := 7
 
 # --- Robot octopus and multiball tuning -------------------------------------
@@ -316,8 +317,14 @@ func create_game_objects() -> void:
 	score_label = Label.new()
 	score_label.name = "ScoreLabel"
 	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	score_label.position = Vector2(SCREEN_SIZE.x / 2.0 - 210.0, 20)
-	score_label.size = Vector2(420, 60)
+	# The label used to be 420 pixels wide, so mobile taps far from the visible
+	# numbers could open restart confirmation. This tighter box still comfortably
+	# fits both scores without claiming a large strip of playable court.
+	score_label.position = Vector2(
+		SCREEN_SIZE.x / 2.0 - SCORE_TOUCH_SIZE.x / 2.0,
+		20.0
+	)
+	score_label.size = SCORE_TOUCH_SIZE
 	score_label.add_theme_font_size_override("font_size", 42)
 	score_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	score_label.gui_input.connect(_on_score_label_gui_input)
@@ -722,9 +729,9 @@ func split_ball_on_alien(ball_state: BallStateData) -> void:
 	# the ricochet's x sign opposite the forward ball so they cannot leave the
 	# explosion heading toward the same player.
 	reflected_direction.x = -sign(forward_direction.x) * abs(reflected_direction.x)
-	# The balls have equal mass, so this game uses speed as its momentum meter.
-	# Each ball receives 40% of the incoming speed, then the exploding robot adds
-	# a small fixed kick. The robot and loose debris visually carry the remainder.
+	# Every ball has the same mass, so 40% of speed means 40% of momentum size.
+	# Direction is handled separately above. The robot adds a fixed kick, while
+	# its crashing body and loose debris visually carry the remaining momentum.
 	var split_speed: float = min(
 		ball_state.speed * ALIEN_MOMENTUM_SHARE + ALIEN_EXPLOSION_SPEED_BOOST,
 		MAX_BALL_SPEED
@@ -807,8 +814,9 @@ func handle_score_click() -> void:
 
 func handle_score_touch() -> void:
 	touch_controls_seen = true
-	if game_over:
-		handle_score_click()
+	# Phones may also synthesize a mouse click from this touch. handle_score_click
+	# already ignores a duplicate arriving within 0.15 seconds.
+	handle_score_click()
 
 
 func show_restart_confirm() -> void:
@@ -1496,8 +1504,8 @@ func bounce_from_wall(ball_state: BallStateData, wall_side: float) -> void:
 
 
 func ball_should_start_dribbling(ball_state: BallStateData, delta: float) -> bool:
-	# Split balls begin with half momentum, so their lower threshold gives that
-	# shared momentum time to play out before recovery begins.
+	# Split balls begin with 40% momentum plus the explosion kick. Their lower
+	# threshold gives that smaller amount time to play out before recovery begins.
 	var minimum_speed := MIN_RALLY_BALL_SPEED
 	if active_balls.size() > 1:
 		minimum_speed = MIN_MULTIBALL_RALLY_SPEED

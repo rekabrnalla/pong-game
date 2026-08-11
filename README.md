@@ -166,6 +166,7 @@ The first player to reach 7 points wins.
 
 When the game is over, a pop-up says to click or tap the score to restart.
 If someone clicks the score during the game, the game asks "Are you sure?" first so an accidental tap does not reset the match.
+On mobile, only the small area immediately around the visible score numbers responds as the restart target. The surrounding top-center court remains available for paddle movement.
 
 ## Robot Octopus And Multiball
 
@@ -179,7 +180,7 @@ The octopus is drawn from circles, lines, and polygons. Each mechanical tentacle
 
 If a ball hits the alien:
 
-- The original ball keeps going in its current direction.
+- The original ball generally keeps going forward. If it was moving almost vertically, the explosion tilts it sideways enough to keep the rally playable.
 - A second ball ricochets backward at a small angle toward the opposite side.
 - Each ball receives 40% of the incoming ball's momentum, plus a small fixed push from the robot's explosion. Because the balls have equal mass, the code can use speed as its momentum measurement. The horizontal part is stronger than the vertical part, reducing immediate up-and-down traps.
 - The robot flashes apart, loses several tentacles and pieces, spins under gravity, and crashes against the bottom of the court.
